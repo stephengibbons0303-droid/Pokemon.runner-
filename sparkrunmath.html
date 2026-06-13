@@ -137,7 +137,12 @@ function crossfade(toFast){
       ensure(); if(!ctx||muted) return; if(ctx.state==='suspended')ctx.resume();
       const t=ctx.currentTime+0.01;
       if(kind==='hop'){ blip(660,t,0.12,'square',0.16,1180); }
-      else if(kind==='good'){ [660,880,1320].forEach((f,i)=>blip(f,t+i*0.07,0.14,'square',0.16)); }
+      else if(kind==='good'){
+        // warm rising arpeggio + bright twinkle = "ding, correct!"
+        [784,988,1318,1568].forEach((f,i)=>blip(f,t+i*0.05,0.16,'triangle',0.18));
+        blip(2093,t+0.20,0.14,'sine',0.10,2637);
+        blip(2637,t+0.27,0.22,'sine',0.07);
+      }
       else if(kind==='bad'){ blip(200,t,0.28,'sawtooth',0.16,120); }
       else if(kind==='win'){ [523,659,784,1046,1318].forEach((f,i)=>blip(f,t+i*0.09,0.2,'triangle',0.18)); }
       else if(kind==='select'){ blip(880,t,0.08,'square',0.12); }
@@ -191,6 +196,8 @@ let gate=null;              // {x, choices:[..], correct, locked, result}
 let speed=120;             // px/sec the gate approaches (ramps)
 let trail=[];              // sparkle particles
 let confetti=[];
+let rings=[];              // expanding shockwave rings (correct-answer pop)
+let stars=[];              // bursting star sparkles
 let bgScroll=0, hills=0;
 let flash={a:0,col:'#fff'};
 let lastT=performance.now();
@@ -204,6 +211,14 @@ function setSpeedMode(on){
     speedAnnounce=1.6; flash={a:0.5,col:'#ffe08a'};
     for(let i=0;i<40;i++) confetti.push({x:PLAYER_X+10,y:player.y,vx:(Math.random()-0.2)*420,vy:-Math.random()*360-60,life:1.2,r:4+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*14,c:pick([C.glow,C.coral,C.spark,'#fff'])});
   }
+}
+
+// celebratory burst at the spot Pikachu passes through the correct answer
+function correctPop(x,y){
+  rings.push({x,y,r:16,maxR:152,life:0.60,col:C.mint,lw:8});
+  rings.push({x,y,r:4, maxR:104,life:0.52,col:C.glow,lw:5});
+  for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2, sp=90+Math.random()*230;
+    stars.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.55+Math.random()*0.35,r:6+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*16,c:pick([C.glow,C.mint,C.spark,'#fff'])}); }
 }
 
 function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); }
@@ -297,6 +312,8 @@ function update(dt){
   }
   trail=trail.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; return p.life>0; });
   confetti=confetti.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.rot+=p.vr*dt; return p.life>0 && p.y<H+40; });
+  rings=rings.filter(p=>{ p.life-=dt; p.r+=(p.maxR-p.r)*Math.min(1,dt*7); return p.life>0; });
+  stars=stars.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.rot+=p.vr*dt; return p.life>0; });
   if(flash.a>0) flash.a=Math.max(0,flash.a-dt*1.6);
   if(speedAnnounce>0) speedAnnounce-=dt;
   if(speedMode) speedLines=(speedLines+dt*1600)%W; else speedLines=0;
@@ -313,7 +330,9 @@ function update(dt){
       player.targetY=LANE_Y[0];      // gate's passed — fall back to the ground
       if(gate.result){
         score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
-        Audio8.sfx('good'); flash={a:0.35,col:'#bff7d8'};
+        Audio8.sfx('good'); flash={a:0.42,col:'#c9ffe0'};
+        // satisfying pass-through pop, right where she caught the answer (any lane)
+        correctPop(PLAYER_X, player.y);
         for(let i=0;i<18;i++) confetti.push({x:PLAYER_X+10,y:player.y,vx:(Math.random()-0.3)*260,vy:-Math.random()*320-60,life:1.1,r:4+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*12,c:pick([C.glow,C.coral,C.mint,C.spark])});
         if(streak>=SPEED_STREAK) setSpeedMode(true);    // hot streak → SPEED RUN!
       } else {
@@ -463,10 +482,15 @@ function drawCard(x,y,val,theme,selected,reveal){
   g.restore();
 }
 
+function sparkle(r){ g.beginPath(); for(let i=0;i<8;i++){ const a=i*Math.PI/4, rad=(i%2===0)?r:r*0.4; g.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);} g.closePath(); g.fill(); }
 function drawParticles(){
   trail.forEach(p=>{ g.globalAlpha=Math.max(0,p.life*2); g.fillStyle=p.c; g.beginPath(); g.arc(p.x,p.y,p.r,0,7); g.fill(); });
   g.globalAlpha=1;
+  // expanding shockwave rings
+  rings.forEach(p=>{ g.save(); g.globalAlpha=Math.max(0,Math.min(1,p.life*1.8)); g.strokeStyle=p.col; g.lineWidth=Math.max(1,p.lw*p.life*1.6); g.beginPath(); g.arc(p.x,p.y,p.r,0,7); g.stroke(); g.restore(); });
   confetti.forEach(p=>{ g.save(); g.globalAlpha=Math.min(1,p.life); g.translate(p.x,p.y); g.rotate(p.rot); g.fillStyle=p.c; g.fillRect(-p.r/2,-p.r/2,p.r,p.r*1.6); g.restore(); });
+  // twinkling star sparkles
+  stars.forEach(p=>{ g.save(); g.globalAlpha=Math.max(0,Math.min(1,p.life*1.8)); g.translate(p.x,p.y); g.rotate(p.rot); g.fillStyle=p.c; sparkle(p.r); g.restore(); });
   g.globalAlpha=1;
 }
 
