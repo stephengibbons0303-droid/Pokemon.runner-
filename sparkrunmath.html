@@ -48,6 +48,12 @@ const cv = document.getElementById('game');
 const g  = cv.getContext('2d');
 const W = 960, H = 540;                 // fixed virtual resolution
 
+/* ---------- sprite sheet: Pikachu run cycle ---------- */
+const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386 };
+pika.img.onload = ()=>{ pika.ready=true; };
+pika.img.src = 'pikachu-run.png';
+const PIKA_H = 120;                       // on-screen draw height (px)
+
 /* ---------- lane geometry ---------- */
 const FLOOR_Y = 472;
 const LANE_Y  = [430, 318, 206];        // [ground, mid, high] = creature CENTER y
@@ -156,7 +162,7 @@ let state='menu';           // menu | play | resolve | levelup | over | won
 let levelIdx=0, stepInLvl=0, score=0, streak=0, hearts=3;
 let prizes=[];              // collected sparks per level
 
-const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0 };
+const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0, frameT:0, frame:0 };
 let gate=null;              // {x, choices:[..], correct, locked, result}
 let speed=120;             // px/sec the gate approaches (ramps)
 let trail=[];              // sparkle particles
@@ -225,6 +231,10 @@ function update(dt){
   bgScroll=(bgScroll+ dt*(state==='play'?70:24))%160;
   hills=(hills+dt*14)%W;
   player.bob+=dt*4;
+  // advance the run-cycle frame (faster while actually running)
+  const running = (state==='play'||state==='resolve'||state==='levelup'||state==='menu');
+  player.frameT += dt*(running?12:7);
+  player.frame = Math.floor(player.frameT)%pika.frames;
   if(player.hopT>0) player.hopT-=dt;
   if(player.moodT>0){ player.moodT-=dt; if(player.moodT<=0) player.mood='run'; }
   // ease creature toward its lane
@@ -307,39 +317,27 @@ function drawBackground(){
   g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(0,FLOOR_Y,W,4);
 }
 
-/* the mascot: an original glowing fox-spark */
+/* the mascot: Pikachu run-cycle sprite (with a soft spark glow) */
 function drawCreature(x,y,mood){
-  const bob=Math.sin(player.bob)*3 + (player.hopT>0?-10:0);
-  y+=bob;
+  const bob=Math.sin(player.bob)*3 + (player.hopT>0?-12:0);
+  const s=PIKA_H/pika.ch, dw=pika.cw*s, dh=PIKA_H;
+  const feetY=y+28+bob;            // baseline the feet rest on
+  const dx=x-dw*0.56;              // nudge so the body sits on the choice line
+  const dy=feetY-dh;
   g.save();
-  // soft glow
-  const gl=g.createRadialGradient(x,y,4,x,y,46); gl.addColorStop(0,'rgba(255,224,138,.55)'); gl.addColorStop(1,'rgba(255,224,138,0)');
-  g.fillStyle=gl; g.beginPath(); g.arc(x,y,46,0,7); g.fill();
-  // tail
-  g.fillStyle=C.coral; g.beginPath(); g.moveTo(x-14,y+6); g.quadraticCurveTo(x-44,y-6,x-30,y-26); g.quadraticCurveTo(x-22,y-8,x-12,y-2); g.closePath(); g.fill();
-  g.fillStyle=C.glow; g.beginPath(); g.moveTo(x-26,y-20); g.quadraticCurveTo(x-34,y-12,x-22,y-6); g.quadraticCurveTo(x-22,y-14,x-18,y-12); g.closePath(); g.fill();
-  // body
-  g.fillStyle='#ffb14e';
-  g.beginPath(); g.ellipse(x,y,24,22,0,0,7); g.fill();
-  g.fillStyle='#fff4e6'; g.beginPath(); g.ellipse(x+2,y+8,13,11,0,0,7); g.fill(); // belly
-  // ears
-  g.fillStyle='#ffb14e';
-  g.beginPath(); g.moveTo(x-12,y-16); g.lineTo(x-20,y-36); g.lineTo(x-2,y-22); g.closePath(); g.fill();
-  g.beginPath(); g.moveTo(x+12,y-16); g.lineTo(x+20,y-36); g.lineTo(x+2,y-22); g.closePath(); g.fill();
-  g.fillStyle=C.coral;
-  g.beginPath(); g.moveTo(x-13,y-20); g.lineTo(x-17,y-31); g.lineTo(x-7,y-23); g.closePath(); g.fill();
-  g.beginPath(); g.moveTo(x+13,y-20); g.lineTo(x+17,y-31); g.lineTo(x+7,y-23); g.closePath(); g.fill();
-  // cheeks
-  g.fillStyle='rgba(255,122,133,.7)'; g.beginPath(); g.arc(x-13,y+4,4,0,7); g.fill(); g.beginPath(); g.arc(x+13,y+4,4,0,7); g.fill();
-  // eyes
-  g.fillStyle=C.ink;
-  if(mood==='oops'){ g.fillRect(x-11,y-4,7,2); g.fillRect(x+5,y-4,7,2); }
-  else { g.beginPath(); g.arc(x-8,y-3,3.4,0,7); g.fill(); g.beginPath(); g.arc(x+8,y-3,3.4,0,7); g.fill();
-    g.fillStyle='#fff'; g.beginPath(); g.arc(x-7,y-4,1.2,0,7); g.fill(); g.beginPath(); g.arc(x+9,y-4,1.2,0,7); g.fill(); }
-  // mouth
-  g.strokeStyle=C.ink; g.lineWidth=2; g.beginPath();
-  if(mood==='happy'){ g.arc(x,y+4,5,0.1,Math.PI-0.1); } else if(mood==='oops'){ g.arc(x,y+10,4,Math.PI+0.2,-0.2); } else { g.moveTo(x-3,y+5); g.lineTo(x+3,y+5); }
-  g.stroke();
+  // soft glow behind the creature
+  const gl=g.createRadialGradient(x,y+bob,4,x,y+bob,52);
+  gl.addColorStop(0,'rgba(255,224,138,.45)'); gl.addColorStop(1,'rgba(255,224,138,0)');
+  g.fillStyle=gl; g.beginPath(); g.arc(x,y+bob,52,0,7); g.fill();
+  if(pika.ready){
+    if(mood==='oops'){ g.translate(x,feetY); g.rotate(0.12); g.translate(-x,-feetY); }
+    g.imageSmoothingEnabled=true;
+    g.drawImage(pika.img, player.frame*pika.cw,0,pika.cw,pika.ch, dx,dy,dw,dh);
+    if(mood==='oops'){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.30)'; g.fillRect(dx,dy,dw,dh); }
+  } else {
+    // simple placeholder while the sprite sheet loads
+    g.fillStyle='#ffd166'; g.beginPath(); g.arc(x,y+bob,22,0,7); g.fill();
+  }
   g.restore();
 }
 
