@@ -82,6 +82,18 @@ function bossSprite(file){
   return bossImgs[file];
 }
 
+// Pikachu's move set — 2 at level 1, learn one more each level you clear.
+// unlock = the level index at which the move becomes available.
+const PIKA_MOVES = [
+  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', dmg:1, col:'#e3ecff', unlock:0, blurb:'Fast jab' },
+  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', dmg:2, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
+  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', dmg:3, col:'#ffc23a', unlock:1, blurb:'Big hit' },
+  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  dmg:1, col:'#8fe0ff', unlock:2, shield:true, blurb:'Traps the boss' },
+];
+function availMoves(){ return PIKA_MOVES.filter(m=>m.unlock<=levelIdx); }
+function curMove(){ return PIKA_MOVES.find(m=>m.key===equipped) || PIKA_MOVES[1]; }
+function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move learned entering this level
+
 /* ---------- lane geometry ---------- */
 const FLOOR_Y = 472;
 const LANE_Y  = [430, 318, 206];        // [ground, mid, high] = creature CENTER y
@@ -226,7 +238,8 @@ let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
-let bossCut=null, moveIdx=0;                          // attack move cut-in panel
+let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
+let equipped='tb', pikaAtk=null, pikaShield=false;    // Pikachu's selected move + FX + Electroweb shield
 
 function setSpeedMode(on){
   if(on===speedMode) return;
@@ -245,7 +258,7 @@ function correctPop(x,y){
     stars.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.55+Math.random()*0.35,r:6+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*16,c:pick([C.glow,C.mint,C.spark,'#fff'])}); }
 }
 
-function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; }
+function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=false; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play';
@@ -273,9 +286,10 @@ function spawnGate(){
 function enterBoss(){
   state='boss'; gate=null; setSpeedMode(false);
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
-  const hp=3+levelIdx;
+  const hp=4+levelIdx*3;                              // scaled so 1–3 dmg moves take a few turns
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
-  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0;
+  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=false;
+  if(!availMoves().some(m=>m.key===equipped)) equipped='tb';
   bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
 }
@@ -295,10 +309,11 @@ function spawnChallenge(){
   const choices=makeChoices(ans);
   bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
 }
-function fireZap(){
-  const gx=BOSS_X-60, gy=BOSS_Y;
-  zaps.push({ life:0.34, max:0.34, x1:PLAYER_X+22, y1:player.y-6, x2:gx, y2:gy });
-  correctPop(gx,gy);
+// Pikachu unleashes the equipped move on the boss
+function pikaFire(m){
+  pikaAtk={ m, spr:bossSprite(m.file), t:0, dur:0.62 };
+  zaps.push({ life:0.30, max:0.30, x1:PLAYER_X+40, y1:player.y-6, x2:BOSS_X-60, y2:BOSS_Y });
+  correctPop(BOSS_X-60, BOSS_Y);
 }
 function bossDefeated(){
   prizes.push(levelIdx);
@@ -340,6 +355,14 @@ function onPress(e){
   e.preventDefault();
   const p=canvasPoint(e);
   if(pointInMute(p.x,p.y)){ Audio8.toggle(); Audio8.sfx('select'); return; }
+  if(state==='boss'){                                  // tap a move button to equip it (not a jump)
+    for(const r of moveBarRects()){
+      if(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){
+        if(equipped!==r.m.key){ equipped=r.m.key; Audio8.sfx('select'); }
+        return;
+      }
+    }
+  }
   hop();
 }
 cv.addEventListener('mousedown',onPress);
@@ -446,14 +469,19 @@ function update(dt){
         bossChal.locked=true; bossChal.resolveT=0.7; player.targetY=LANE_Y[0];
         bossChal.result=(player.lane===bossChal.correctLane);
         if(bossChal.result){
-          boss.hp--; boss.hurt=0.6; streak++; score+=20;
-          Audio8.sfx('good'); flash={a:0.4,col:'#cdfaff'}; fireZap();
+          const m=curMove(); boss.hp-=m.dmg; boss.hurt=0.6; streak++; score+=20;
+          Audio8.sfx('good'); flash={a:0.4,col:m.col}; pikaFire(m);
           player.mood='happy'; player.moodT=0.7;
+          if(m.shield) pikaShield=true;
           if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.2; }
-          else { bossMsg='⚡ Super effective!'; bossMsgT=1.1; }
+          else bossMsg='Pikachu used '+m.name+'!'+(m.shield?' 🕸️':''), bossMsgT=1.2;
+        } else if(pikaShield){
+          pikaShield=false; streak=0; player.mood='run';
+          Audio8.sfx('select'); flash={a:0.35,col:'#8fe0ff'};
+          bossMsg='🕸️ Electroweb held '+boss.cfg.name+'!'; bossMsgT=1.3;   // counter blocked, no heart lost
         } else {
           streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
-          Audio8.sfx('bad'); const d=bossAttack(); if(d) bossChal.resolveT=d;   // play move cut-in
+          Audio8.sfx('bad'); const d=bossAttack(); if(d) bossChal.resolveT=d;   // play boss move cut-in
         }
         if(hearts<=0){ Audio8.sfx('bad'); state='over'; return; }
       }
@@ -463,6 +491,7 @@ function update(dt){
       }
     }
     if(bossCut){ bossCut.t+=dt; if(bossCut.t>=bossCut.dur) bossCut=null; }
+    if(pikaAtk){ pikaAtk.t+=dt; if(pikaAtk.t>=pikaAtk.dur) pikaAtk=null; }
   }
 }
 
@@ -667,13 +696,19 @@ function drawMenu(){
 }
 
 function drawLevelUp(){
-  panel('Level Done!','You earned a Spark Friend ✨','Tap for next level →', ()=>{
+  const learned=newMoveAt(levelIdx+1);       // a move unlocked by clearing this level
+  const sub = learned ? ('Pikachu learned '+learned.name+'! ✨') : 'You earned a Spark Friend ✨';
+  panel('Level Done!', sub, 'Tap for next level →', ()=>{
     drawCelebrate(W/2, 150, 150);            // cheering Pikachu above the title
-    // show collected prizes as little creatures
     const n=prizes.length; const startX=W/2-(n-1)*36;
     for(let i=0;i<n;i++){ g.save(); g.translate(startX+i*72, H/2+18); g.scale(.55,.55); drawCreature(0,0,'happy'); g.restore(); }
     g.fillStyle=C.cream; g.font='600 22px Fredoka, sans-serif'; g.textAlign='center';
     g.fillText('Score: '+score, W/2, H/2+44);
+    if(learned){                              // showcase the new move sprite
+      const spr=bossSprite(learned.file);
+      if(spr&&spr.ready){ const h=110, w=spr.img.width*(h/spr.img.height);
+        g.imageSmoothingEnabled=true; g.drawImage(spr.img, W/2-w/2, H/2+58, w, h); }
+    }
   });
 }
 function drawWon(){
@@ -715,7 +750,11 @@ function drawBoss(){
     g.fillText(bossChal.q+' = ?', W/2, by+bh/2+2); g.textAlign='left'; g.textBaseline='alphabetic';
   }
   drawZaps();
-  drawCreature(PLAYER_X, player.y, player.mood);
+  // Pikachu: show the move sprite while attacking, else the usual runner
+  if(pikaShield) drawShield(PLAYER_X, player.y);
+  if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
+  else drawCreature(PLAYER_X, player.y, player.mood);
+  drawMoveBar();
   drawBossHUD();
   drawHUD();
   if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
@@ -816,6 +855,49 @@ function drawZaps(){
     g.strokeStyle=C.spark; g.lineWidth=2.5; g.shadowBlur=0; g.stroke();
     g.restore();
   });
+}
+
+/* ----- Pikachu move bar (bottom strip) + attack FX ----- */
+function moveBarRects(){
+  const ms=availMoves(), n=ms.length, bw=176, bh=50, gap=10;
+  const tot=n*bw+(n-1)*gap; let x=W/2-tot/2; const y=H-58;
+  return ms.map(m=>{ const r={m,x,y,w:bw,h:bh}; x+=bw+gap; return r; });
+}
+function drawMoveBar(){
+  g.save(); g.textBaseline='middle';
+  for(const r of moveBarRects()){
+    const sel=(r.m.key===equipped);
+    g.fillStyle = sel ? 'rgba(44,30,66,.96)' : 'rgba(26,18,42,.82)';
+    rr(r.x,r.y,r.w,r.h,12); g.fill();
+    g.lineWidth = sel?4:2; g.strokeStyle = sel ? r.m.col : 'rgba(255,255,255,.22)';
+    if(sel) g.shadowColor=r.m.col, g.shadowBlur=12;
+    rr(r.x,r.y,r.w,r.h,12); g.stroke(); g.shadowBlur=0;
+    const spr=bossSprite(r.m.file);          // sprite thumbnail
+    if(spr&&spr.ready){ const ih=r.h-12, iw=spr.img.width*(ih/spr.img.height);
+      g.save(); rr(r.x+5,r.y+6,46,ih,8); g.clip();
+      g.imageSmoothingEnabled=true; g.drawImage(spr.img, r.x+5-(iw-46)*0.30, r.y+6, iw, ih); g.restore(); }
+    g.textAlign='left';
+    g.fillStyle = sel?'#fff':'#cfc7e0'; g.font='700 16px Fredoka, sans-serif';
+    g.fillText(r.m.name, r.x+58, r.y+17);
+    g.fillStyle = r.m.col; g.font='700 13px Fredoka, sans-serif';
+    g.fillText(r.m.shield?('⚡'+r.m.dmg+'  🕸️'):('⚡ '+r.m.dmg), r.x+58, r.y+35);
+  }
+  g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
+}
+function drawPikaAttack(){
+  const a=pikaAtk, p=a.t/a.dur, im=a.spr.img;
+  const h=176, w=im.width*(h/im.height);
+  const x=PLAYER_X - w*0.34 + p*26, y=player.y - h*0.55;     // small forward lunge
+  g.save(); g.globalAlpha=Math.min(1,(1-p)*1.7+0.22);
+  g.imageSmoothingEnabled=true; g.drawImage(im, x, y, w, h);
+  g.restore();
+}
+function drawShield(x,y){
+  const t=performance.now()/1000;
+  g.save(); g.beginPath(); g.ellipse(x, y-8, 50, 62, 0, 0, 7);
+  g.globalAlpha=0.16; g.fillStyle='#8fe0ff'; g.fill();
+  g.globalAlpha=0.5+0.22*Math.sin(t*5); g.strokeStyle='#8fe0ff'; g.lineWidth=3; g.stroke();
+  g.restore();
 }
 
 function drawBossHUD(){
