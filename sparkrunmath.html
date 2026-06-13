@@ -73,6 +73,11 @@ const JUMP_H = 132;                       // on-screen jump height (px)
 const celeb = { img:new Image(), ready:false, frames:4, cw:177, ch:179 };
 celeb.img.onload = ()=>{ celeb.ready=true; };
 celeb.img.src = 'pikachu-celebrate.png';
+// dodge-roll: 4 separately-sized frames (start → tuck → descent → end), one uniform scale
+const roll = { frames:[], n:4, loaded:0, ready:false, scale:0.58 };
+['pika_roll0.png','pika_roll1.png','pika_roll2.png','pika_roll3.png'].forEach((f,i)=>{
+  const o=new Image(); o.onload=()=>{ if(++roll.loaded>=roll.n) roll.ready=true; }; o.src=f; roll.frames[i]=o;
+});
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
 // (more Pokémon to come; each gets its own sprite + tint.)
@@ -1250,6 +1255,7 @@ function drawDuel(){
   drawAsh();                // trainer on the bank
   if(pikaShield>0) drawShield(PLAYER_X+pikaDX, player.y);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
+  else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, player.y)){}    // tumbling roll-dodge
   else drawCreature(PLAYER_X+pikaDX, player.y, player.mood, true);   // crouched stance (offset while rolling)
   drawBossHUD();
   // controls: dodge arrows during a wind-up, move buttons otherwise
@@ -1259,6 +1265,17 @@ function drawDuel(){
   if(bossPhase==='intro') drawDuelIntro();
   else if(dodgeWin>0) drawDodgePrompt();
   else if(bossMsgT>0) drawBossMsg();
+}
+// play the roll frames across the dodge, centred on Pikachu; mirror when rolling right
+function drawRoll(x,y){
+  const p=Math.min(1, dodgeRoll.t/dodgeRoll.dur);
+  const img=roll.frames[Math.min(roll.n-1, Math.floor(p*roll.n))];
+  if(!img || !img.complete || !img.width) return false;
+  const w=img.width*roll.scale, h=img.height*roll.scale, cy=y-8;
+  g.save();
+  if(dodgeRoll.dir>0){ g.translate(x,0); g.scale(-1,1); g.translate(-x,0); }   // forward = roll to the right
+  g.imageSmoothingEnabled=true; g.drawImage(img, x-w/2, cy-h/2, w, h);
+  g.restore(); return true;
 }
 // big arrow dodge buttons (only during a wind-up); any one dodges
 function drawDodgeButtons(){
