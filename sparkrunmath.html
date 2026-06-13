@@ -195,7 +195,12 @@ function crossfade(toFast){
 })();
 
 /* ============================================================
-   MATHS — Year 2/3 progression with plausible distractors
+   MATHS — 5 levels on a gentle incremental ramp
+   L1 easy addition → L2 subtraction (bridging 10) →
+   L3 two-digit +/− (carry & borrow) → L4 times tables →
+   L5 harder tables + division facts.
+   Every question stays a plain `a ○ b = ?` with an integer
+   answer, so it fits the banner and the answer lanes.
    ============================================================ */
 const rnd=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const pick=a=>a[Math.floor(Math.random()*a.length)];
@@ -203,17 +208,23 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 // each level: a generator(step 0..n-1) -> {q, ans}
 const LEVELS = [
   { name:'Bloom Meadow',  theme:'balloon', count:8,
-    gen:s=>{ const cap=10+s; let a=rnd(2,Math.min(9,4+s)), b=rnd(2,Math.max(3,cap-a)); return {q:`${a} + ${b}`, ans:a+b}; } },
+    // L1 — easy addition, small sums that grow a little through the level
+    gen:s=>{ const cap=8+s; const a=rnd(1,Math.min(7,cap-1)); const b=rnd(1,Math.max(1,cap-a)); return {q:`${a} + ${b}`, ans:a+b}; } },
   { name:'Orchard Hop',   theme:'apple', count:8,
-    gen:s=>{ let a=rnd(8,14+s), b=rnd(2,Math.min(a-1,5+s)); return {q:`${a} − ${b}`, ans:a-b}; } },
+    // L2 — subtraction within ~20, often bridging back through ten
+    gen:s=>{ const a=rnd(11,15+s); const b=rnd(3,Math.min(9,a-2)); return {q:`${a} − ${b}`, ans:a-b}; } },
   { name:'Bubble Bay',    theme:'bubble', count:9,
-    gen:s=>{ if(s%2===0){let a=rnd(6,13+s),b=rnd(3,9);return{q:`${a} + ${b}`,ans:a+b};}
-             let a=rnd(11,20+s),b=rnd(3,9);return{q:`${a} − ${b}`,ans:a-b}; } },
+    // L3 — two-digit add & subtract, with carrying / borrowing
+    gen:s=>{ const big=16+s*3;
+             if(s%2===0){ const a=rnd(12,big), b=rnd(8,19); return {q:`${a} + ${b}`, ans:a+b}; }
+             const a=rnd(22,big+16), b=rnd(8,Math.min(a-5,19)); return {q:`${a} − ${b}`, ans:a-b}; } },
   { name:'Crystal Caves', theme:'crystal', count:9,
-    gen:s=>{ const t=pick([2,5,10,2,5]); const n=rnd(2,2+Math.min(8,3+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
+    // L4 — times tables: start 2/5/10, widen to 3/4 later in the level
+    gen:s=>{ const t = s<4 ? pick([2,5,10]) : pick([2,5,10,3,4]); const n=rnd(2,Math.min(12,5+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
   { name:'Star Summit',   theme:'crystal', count:10,
-    gen:s=>{ if(s%3===2){const t=pick([2,5,10]);const n=rnd(2,9);return{q:`${t*n} ÷ ${t}`,ans:n};}
-             const t=pick([3,4,3,4,2,5]);const n=rnd(2,9);return{q:`${t} × ${n}`,ans:t*n}; } },
+    // L5 — harder tables (3,4,6,8) mixed with division facts
+    gen:s=>{ if(s%2===1){ const t=pick([3,4,6,8,2,5,10]), n=rnd(2,9); return {q:`${t*n} ÷ ${t}`, ans:n}; }
+             const t=pick([3,4,6,8]), n=rnd(2,Math.min(12,6+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
 ];
 
 function makeChoices(ans){
