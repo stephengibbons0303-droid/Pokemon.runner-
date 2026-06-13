@@ -53,8 +53,8 @@ const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386, cnv:null 
 pika.img.onload = ()=>{ pika.cnv=cleanSheet(pika.img, pika.frames); pika.ready=true; };
 pika.img.src = 'pikachu-run.png';
 const PIKA_H = 120;                       // on-screen run height (px)
-const jump = { img:new Image(), ready:false, frames:4, cw:318, ch:265 };
-jump.img.onload = ()=>{ jump.ready=true; };
+const jump = { img:new Image(), ready:false, frames:4, cw:318, ch:265, cnv:null };
+jump.img.onload = ()=>{ jump.cnv=cleanSheet(jump.img, jump.frames); jump.ready=true; };
 jump.img.src = 'pikachu-jump.png';
 const JUMP_H = 132;                       // on-screen jump height (px)
 const celeb = { img:new Image(), ready:false, frames:4, cw:177, ch:179 };
@@ -527,7 +527,7 @@ function update(dt){
   if(flash.a>0) flash.a=Math.max(0,flash.a-dt*1.6);
   if(speedAnnounce>0) speedAnnounce-=dt;
   if(speedMode) speedLines=(speedLines+dt*1600)%W; else speedLines=0;
-  const speedMul=speedMode?1.7:1;        // gates rush in during a hot streak
+  const speedMul=speedMode?1.5:1;        // hot streak = a third less think-time (same question difficulty)
 
   if(state==='play' && gate){
     gate.x -= speed*speedMul*dt;
