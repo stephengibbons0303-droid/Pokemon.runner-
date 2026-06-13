@@ -458,7 +458,8 @@ function enterBoss(){
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0;
-    bossMsg=''; bossMsgT=0;
+    bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
+    for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
     if(cfg.roar) voice(cfg.roar,0.9,'foe'); ashSay(ASH_HUH);   // foe roars, Ash sizes it up
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
@@ -470,11 +471,16 @@ const ASH_HEY='ash_hey.mp3', ASH_HUH='ash_battlehuh.mp3', ASH_WANNA='ash_wannaba
 const ASH_SPIRIT='ash_spirit.mp3', ASH_BEST='ash_dobest.mp3', ASH_COUNT='ash_counton.mp3';
 const ASH_CHEER=[ASH_SPIRIT, ASH_BEST];
 function ashSay(file,vol){ voice(file, vol==null?0.95:vol, 'ash'); }   // Ash coaches on his own channel
+// Ash on the bank: ready (idle), point (coaching), punch (victory)
+const ASH_SPR={ ready:'ash_ready.png', point:'ash_point.png', punch:'ash_punch.png', neutral:'ash_neutral.png' };
+const ASH_X=108, ASH_H=176;
+let ashPose='ready', ashPoseT=0;
+function ashShow(pose,dur){ ashPose=pose; ashPoseT=dur; }   // momentary pose, reverts after dur
 // intro is just a beat to size up the foe (Ash banter here; Ash sprite to come) — then tap to battle
 function duelBegin(){
   if(bossPhase!=='intro') return;
   bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
-  voice(PIKA_CRY,0.9,'pika'); ashSay(ASH_WANNA);
+  voice(PIKA_CRY,0.9,'pika'); ashSay(ASH_WANNA); ashShow('point',1.4);
 }
 function canTarget(){ return !boss.defeated && boss.diveState==='up'; }   // Gyarados is only hittable when surfaced
 function castMove(m){
@@ -483,7 +489,7 @@ function castMove(m){
   if(!canCast(m)){ Audio8.sfx('bad'); return; }
   equipped=m.key;
   charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
-  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; voice(PIKA_THUNDER,0.8,'pika'); if(Math.random()<0.3) ashSay(pick(ASH_CHEER)); }
+  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; voice(PIKA_THUNDER,0.8,'pika'); if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); } }
   else voice(PIKA_VOICE,0.8,'pika');                 // setup move (charm/reflect)
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   pikaFire(m); Audio8.sfx('good'); flash={a:0.35,col:m.col};
@@ -506,12 +512,15 @@ function doDodge(){
 // Pikachu nearly down (last heart) → angry surge that tops his energy back up
 function rileUp(){
   boss.riled=true; charge=MAX_CHARGE; pikaShield=Math.max(pikaShield,1);
-  voice(PIKA_ANGRY,1.0,'pika'); ashSay(ASH_COUNT);
+  voice(PIKA_ANGRY,1.0,'pika'); ashSay(ASH_COUNT); ashShow('point',1.6);
   flash={a:0.5,col:'#ffd23a'}; player.mood='happy'; player.moodT=0.6;
   bossMsg='Pikachu is fired up! ⚡'; bossMsgT=1.8;
 }
 function updateDuel(dt){
   if(castCD>0) castCD-=dt;
+  // Ash pose: punch on victory, else revert to ready after a momentary pose
+  if(boss.defeated) ashPose='punch';
+  else if(ashPoseT>0){ ashPoseT-=dt; if(ashPoseT<=0) ashPose='ready'; }
   // let a dodge-hop fall back down once it has peaked
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
   if(bossPhase!=='battle' || boss.defeated) return;
@@ -1202,12 +1211,23 @@ function drawDodgePrompt(){
   g.save(); g.globalAlpha=0.22*a; g.fillStyle='#9fd8ff'; g.fillRect(0,0,W,14); g.fillRect(0,H-14,W,14); g.restore();
   g.textAlign='left';
 }
+// Ash coaches from the bank, to Pikachu's left (pose set by battle beats)
+function drawAsh(){
+  const spr=bossSprite(ASH_SPR[ashPose]||ASH_SPR.ready);
+  if(!(spr&&spr.ready)) return;
+  const im=spr2d(spr), s=ASH_H/im.height, w=im.width*s, bob=Math.sin(player.bob*0.5)*2;
+  g.save();
+  g.fillStyle='rgba(0,0,0,.18)'; g.beginPath(); g.ellipse(ASH_X, FLOOR_Y+8, w*0.34, 8, 0,0,7); g.fill();
+  g.imageSmoothingEnabled=true; g.drawImage(im, ASH_X-w/2, FLOOR_Y+6+bob-ASH_H, w, ASH_H);
+  g.restore();
+}
 function drawDuel(){
   drawLairBack();
   drawBossSprite();
   drawLakeFront();          // water in front of his lower body → partly submerged
   if(dodgeWin>0) drawDodgeWave();
   drawZaps();
+  drawAsh();                // trainer on the bank
   if(pikaShield>0) drawShield(PLAYER_X, player.y);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else drawCreature(PLAYER_X, player.y, player.mood, true);   // crouched battle stance (not running)
