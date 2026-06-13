@@ -78,6 +78,16 @@ const roll = { frames:[], n:4, loaded:0, ready:false, scale:0.58 };
 ['pika_roll0.png','pika_roll1.png','pika_roll2.png','pika_roll3.png'].forEach((f,i)=>{
   const o=new Image(); o.onload=()=>{ if(++roll.loaded>=roll.n) roll.ready=true; }; o.src=f; roll.frames[i]=o;
 });
+// animated special-move sequences (4-frame strips: prep → charge → launch → aftermath)
+// h = on-screen height of a cell; ax = how far left of Pikachu's x the cell is anchored
+const MOVE_SEQ = {
+  qa:{ file:'pika_seq_qa.png', cw:512, ch:261, h:196, ax:0.34 },
+  tb:{ file:'pika_seq_tb.png', cw:472, ch:342, h:236, ax:0.34 },
+  eb:{ file:'pika_seq_eb.png', cw:236, ch:188, h:178, ax:0.34 },
+  it:{ file:'pika_seq_it.png', cw:229, ch:146, h:150, ax:0.40 },
+};
+for(const k in MOVE_SEQ){ const s=MOVE_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
+function moveSeq(m){ return m ? MOVE_SEQ[m.key] : null; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
 // (more Pokémon to come; each gets its own sprite + tint.)
@@ -627,8 +637,9 @@ function spawnChallenge(){
 }
 // Pikachu unleashes the equipped move on the boss
 function pikaFire(m){
-  pikaAtk={ m, spr:bossSprite(m.file), t:0, dur:0.62 };
-  if(m.dmg>0){ zaps.push({ life:0.30, max:0.30, x1:PLAYER_X+40, y1:player.y-6, x2:BOSS_X-60, y2:BOSS_Y }); correctPop(BOSS_X-60, BOSS_Y); }
+  const seq=moveSeq(m);
+  pikaAtk={ m, spr:bossSprite(m.file), t:0, dur: seq?0.66:0.62 };
+  if(m.dmg>0){ if(!seq) zaps.push({ life:0.30, max:0.30, x1:PLAYER_X+40, y1:player.y-6, x2:BOSS_X-60, y2:BOSS_Y }); correctPop(BOSS_X-60, BOSS_Y); }
   else correctPop(PLAYER_X+30, player.y-10);     // setup moves sparkle on Pikachu
 }
 function bossDefeated(){
@@ -1550,9 +1561,16 @@ function drawMoveBar(){
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
 }
 function drawPikaAttack(){
-  const a=pikaAtk, p=a.t/a.dur, im=spr2d(a.spr);
-  const h=176, w=im.width*(h/im.height);
-  const x=PLAYER_X - w*0.34 + p*26, y=player.y - h*0.55;     // small forward lunge
+  const a=pikaAtk, p=Math.min(1,a.t/a.dur), seq=moveSeq(a.m);
+  if(seq && seq.ready){                                   // animated 4-frame sequence (replaces Pikachu's body)
+    const fi=Math.min(seq.n-1, Math.floor(p*seq.n));
+    const s=seq.h/seq.ch, w=seq.cw*s, feet=player.y+28, x=PLAYER_X+pikaDX-w*seq.ax, y=feet-seq.h;
+    g.save(); g.imageSmoothingEnabled=true;
+    g.drawImage(seq.img, fi*seq.cw,0,seq.cw,seq.ch, x, y, w, seq.h);
+    g.restore(); return;
+  }
+  const im=spr2d(a.spr); const h=176, w=im.width*(h/im.height);   // fallback: single move image
+  const x=PLAYER_X+pikaDX - w*0.34 + p*26, y=player.y - h*0.55;
   g.save(); g.globalAlpha=Math.min(1,(1-p)*1.7+0.22);
   g.imageSmoothingEnabled=true; g.drawImage(im, x, y, w, h);
   g.restore();
