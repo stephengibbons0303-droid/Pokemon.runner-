@@ -83,15 +83,21 @@ function bossSprite(file){
 }
 
 // Pikachu's move set — 2 at level 1, learn one more each level you clear.
-// unlock = the level index at which the move becomes available.
+// unlock = level index the move becomes available; cost/gain feed the charge meter.
+const MAX_CHARGE = 6;
 const PIKA_MOVES = [
-  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', dmg:1, col:'#e3ecff', unlock:0, blurb:'Fast jab' },
-  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', dmg:2, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
-  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', dmg:3, col:'#ffc23a', unlock:1, blurb:'Big hit' },
-  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  dmg:1, col:'#8fe0ff', unlock:2, shield:true, blurb:'Traps the boss' },
+  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
+  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
+  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:1, blurb:'Big hit' },
+  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:2, blurb:'Blocks 1 hit' },
+  { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:3, blurb:'Heavy slam' },
+  { key:'cm', name:'Charm',        file:'pika_charm.png',       dmg:0, cost:0, gain:2, col:'#ff9ed6', unlock:4, blurb:'+2 charge' },
+  { key:'rf', name:'Reflect',      file:'pika_reflect.png',     dmg:0, cost:1, gain:0, shield:2, col:'#b9a6ff', unlock:5, blurb:'Blocks 2 hits' },
+  { key:'gx', name:'G-Max Volt Crash', file:'pika_gmax.png',    dmg:8, cost:5, gain:0, col:'#ff5a3c', unlock:6, blurb:'ULTIMATE' },
 ];
 function availMoves(){ return PIKA_MOVES.filter(m=>m.unlock<=levelIdx); }
 function curMove(){ return PIKA_MOVES.find(m=>m.key===equipped) || PIKA_MOVES[1]; }
+function canCast(m){ return charge>=m.cost; }
 function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move learned entering this level
 
 /* ---------- lane geometry ---------- */
@@ -239,7 +245,7 @@ const SPEED_STREAK=5;                                 // correct answers in a ro
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
 let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
-let equipped='tb', pikaAtk=null, pikaShield=false;    // Pikachu's selected move + FX + Electroweb shield
+let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
 
 function setSpeedMode(on){
   if(on===speedMode) return;
@@ -258,7 +264,7 @@ function correctPop(x,y){
     stars.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.55+Math.random()*0.35,r:6+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*16,c:pick([C.glow,C.mint,C.spark,'#fff'])}); }
 }
 
-function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=false; }
+function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play';
@@ -288,7 +294,7 @@ function enterBoss(){
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   const hp=4+levelIdx*3;                              // scaled so 1–3 dmg moves take a few turns
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
-  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=false;
+  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(!availMoves().some(m=>m.key===equipped)) equipped='tb';
   bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
@@ -312,8 +318,8 @@ function spawnChallenge(){
 // Pikachu unleashes the equipped move on the boss
 function pikaFire(m){
   pikaAtk={ m, spr:bossSprite(m.file), t:0, dur:0.62 };
-  zaps.push({ life:0.30, max:0.30, x1:PLAYER_X+40, y1:player.y-6, x2:BOSS_X-60, y2:BOSS_Y });
-  correctPop(BOSS_X-60, BOSS_Y);
+  if(m.dmg>0){ zaps.push({ life:0.30, max:0.30, x1:PLAYER_X+40, y1:player.y-6, x2:BOSS_X-60, y2:BOSS_Y }); correctPop(BOSS_X-60, BOSS_Y); }
+  else correctPop(PLAYER_X+30, player.y-10);     // setup moves sparkle on Pikachu
 }
 function bossDefeated(){
   prizes.push(levelIdx);
@@ -358,6 +364,7 @@ function onPress(e){
   if(state==='boss'){                                  // tap a move button to equip it (not a jump)
     for(const r of moveBarRects()){
       if(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){
+        if(!canCast(r.m)){ Audio8.sfx('bad'); return; }       // not enough charge
         if(equipped!==r.m.key){ equipped=r.m.key; Audio8.sfx('select'); }
         return;
       }
@@ -469,16 +476,19 @@ function update(dt){
         bossChal.locked=true; bossChal.resolveT=0.7; player.targetY=LANE_Y[0];
         bossChal.result=(player.lane===bossChal.correctLane);
         if(bossChal.result){
-          const m=curMove(); boss.hp-=m.dmg; boss.hurt=0.6; streak++; score+=20;
+          let m=curMove(); if(!canCast(m)) m=PIKA_MOVES[0];        // safety fallback to Quick Attack
+          charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
+          boss.hp-=m.dmg; if(m.dmg>0) boss.hurt=0.6; streak++; score+=20;
           Audio8.sfx('good'); flash={a:0.4,col:m.col}; pikaFire(m);
           player.mood='happy'; player.moodT=0.7;
-          if(m.shield) pikaShield=true;
+          if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
           if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.2; }
-          else bossMsg='Pikachu used '+m.name+'!'+(m.shield?' 🕸️':''), bossMsgT=1.2;
-        } else if(pikaShield){
-          pikaShield=false; streak=0; player.mood='run';
-          Audio8.sfx('select'); flash={a:0.35,col:'#8fe0ff'};
-          bossMsg='🕸️ Electroweb held '+boss.cfg.name+'!'; bossMsgT=1.3;   // counter blocked, no heart lost
+          else bossMsg='Pikachu used '+m.name+'!', bossMsgT=1.2;
+          if(!canCast(curMove())) equipped='qa';                  // keep the equipped move castable
+        } else if(pikaShield>0){
+          pikaShield--; streak=0; player.mood='run';
+          Audio8.sfx('select'); flash={a:0.35,col:'#9fd8ff'};
+          bossMsg='Blocked '+boss.cfg.name+"'s attack! 🛡️"; bossMsgT=1.3;   // shield soaks it, no heart lost
         } else {
           streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
           Audio8.sfx('bad'); const d=bossAttack(); if(d) bossChal.resolveT=d;   // play boss move cut-in
@@ -644,9 +654,9 @@ function drawHUD(){
     g.fillStyle='rgba(255,244,230,.85)'; g.fillText(LEVELS[levelIdx].name+'  ·  '+(stepInLvl+1)+'/'+LEVELS[levelIdx].count, 22, 52);
     if(streak>1){ g.fillStyle=C.glow; g.fillText('🔥 '+streak+' in a row!', 22, 76); }
   }
-  // hearts (center-top under banner? keep left under level)
-  g.font='22px Fredoka, sans-serif'; g.textAlign='left';
-  let hx=22, hy=H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
+  // hearts — bottom-left normally, but top-left in boss (move bar owns the bottom strip)
+  g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
+  let hx=22, hy=(state==='boss')?52:H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
 
   // lane hint arrow on creature's active lane
   if(state==='play'){
@@ -751,7 +761,7 @@ function drawBoss(){
   }
   drawZaps();
   // Pikachu: show the move sprite while attacking, else the usual runner
-  if(pikaShield) drawShield(PLAYER_X, player.y);
+  if(pikaShield>0) drawShield(PLAYER_X, player.y);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else drawCreature(PLAYER_X, player.y, player.mood);
   drawMoveBar();
@@ -857,30 +867,50 @@ function drawZaps(){
   });
 }
 
-/* ----- Pikachu move bar (bottom strip) + attack FX ----- */
+/* ----- Pikachu move bar (bottom strip) + charge meter + attack FX ----- */
 function moveBarRects(){
-  const ms=availMoves(), n=ms.length, bw=176, bh=50, gap=10;
-  const tot=n*bw+(n-1)*gap; let x=W/2-tot/2; const y=H-58;
+  const ms=availMoves(), n=ms.length, gap=8, margin=14, avail=W-2*margin;
+  const bw=Math.max(70, Math.min(150, (avail-(n-1)*gap)/n)), bh=44;
+  const tot=n*bw+(n-1)*gap; let x=W/2-tot/2; const y=H-48;
   return ms.map(m=>{ const r={m,x,y,w:bw,h:bh}; x+=bw+gap; return r; });
 }
+function drawChargeGauge(x,y){
+  g.textAlign='left'; g.textBaseline='middle';
+  g.fillStyle='#cfc7e0'; g.font='700 13px Fredoka, sans-serif'; g.fillText('CHARGE', x, y);
+  for(let i=0;i<MAX_CHARGE;i++){
+    const px=x+62+i*16, on=i<charge;
+    g.beginPath(); g.arc(px,y,6,0,7);
+    if(on){ g.fillStyle='#ffe14a'; g.shadowColor='#ffe14a'; g.shadowBlur=8; g.fill(); g.shadowBlur=0; }
+    else { g.fillStyle='rgba(255,255,255,.15)'; g.fill(); }
+  }
+  g.textBaseline='alphabetic';
+}
 function drawMoveBar(){
-  g.save(); g.textBaseline='middle';
+  g.save();
+  drawChargeGauge(14, H-62);
+  const eqm=curMove();                                   // equipped move readout (right)
+  g.textAlign='right'; g.textBaseline='middle'; g.font='700 14px Fredoka, sans-serif';
+  g.fillStyle=eqm.col; g.fillText(eqm.name+'  ·  '+eqm.blurb, W-14, H-62);
   for(const r of moveBarRects()){
-    const sel=(r.m.key===equipped);
-    g.fillStyle = sel ? 'rgba(44,30,66,.96)' : 'rgba(26,18,42,.82)';
-    rr(r.x,r.y,r.w,r.h,12); g.fill();
-    g.lineWidth = sel?4:2; g.strokeStyle = sel ? r.m.col : 'rgba(255,255,255,.22)';
-    if(sel) g.shadowColor=r.m.col, g.shadowBlur=12;
-    rr(r.x,r.y,r.w,r.h,12); g.stroke(); g.shadowBlur=0;
-    const spr=bossSprite(r.m.file);          // sprite thumbnail
-    if(spr&&spr.ready){ const ih=r.h-12, iw=spr.img.width*(ih/spr.img.height);
-      g.save(); rr(r.x+5,r.y+6,46,ih,8); g.clip();
-      g.imageSmoothingEnabled=true; g.drawImage(spr.img, r.x+5-(iw-46)*0.30, r.y+6, iw, ih); g.restore(); }
+    const m=r.m, sel=(m.key===equipped), aff=canCast(m);
+    g.globalAlpha = aff?1:0.42;
+    g.fillStyle = sel?'rgba(46,30,68,.97)':'rgba(24,16,40,.88)'; rr(r.x,r.y,r.w,r.h,10); g.fill();
+    const spr=bossSprite(m.file);
+    g.save(); rr(r.x+3,r.y+3,r.w-6,r.h-6,7); g.clip();    // sprite thumbnail (cover)
+    if(spr&&spr.ready){ const s=Math.max((r.w-6)/spr.img.width,(r.h-6)/spr.img.height), iw=spr.img.width*s, ih=spr.img.height*s;
+      g.imageSmoothingEnabled=true; g.drawImage(spr.img, r.x+3+((r.w-6)-iw)/2, r.y+3+((r.h-6)-ih)*0.28, iw, ih); }
+    g.fillStyle='rgba(0,0,0,.42)'; g.fillRect(r.x+3, r.y+r.h-18, r.w-6, 15);   // legibility strip
+    g.restore();
+    // effect (left) + cost (right) along the bottom
+    g.textBaseline='alphabetic'; g.font='700 12px Fredoka, sans-serif'; g.textAlign='left';
+    g.fillStyle='#fff';
+    g.fillText(m.dmg>0?('⚔ '+m.dmg):(m.shield?('🛡 '+m.shield):('＋'+m.gain)), r.x+7, r.y+r.h-6);
+    g.textAlign='right'; g.fillStyle=m.col; g.fillText(m.cost>0?('⚡'+m.cost):'free', r.x+r.w-7, r.y+r.h-6);
+    // border (selected glows; affordable moves get a soft tint)
     g.textAlign='left';
-    g.fillStyle = sel?'#fff':'#cfc7e0'; g.font='700 16px Fredoka, sans-serif';
-    g.fillText(r.m.name, r.x+58, r.y+17);
-    g.fillStyle = r.m.col; g.font='700 13px Fredoka, sans-serif';
-    g.fillText(r.m.shield?('⚡'+r.m.dmg+'  🕸️'):('⚡ '+r.m.dmg), r.x+58, r.y+35);
+    g.lineWidth=sel?4:2; g.strokeStyle = sel?m.col:'rgba(255,255,255,.22)';
+    if(sel){ g.shadowColor=m.col; g.shadowBlur=12; } rr(r.x,r.y,r.w,r.h,10); g.stroke(); g.shadowBlur=0;
+    g.globalAlpha=1;
   }
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
 }
