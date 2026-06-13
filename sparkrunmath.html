@@ -702,12 +702,23 @@ function onPress(e){
 }
 cv.addEventListener('mousedown',onPress);
 cv.addEventListener('touchstart',onPress,{passive:false});
+// laptop keys: ←/→ dodge roll, ↑/Space jump; Z X C V B = move 1..5 (cast in duel, equip in classic)
+const MOVE_KEYS={KeyZ:0,KeyX:1,KeyC:2,KeyV:3,KeyB:4};
 window.addEventListener('keydown',e=>{
   if(e.code==='KeyP'||e.code==='Escape'){ if(inGameplay()){ e.preventDefault(); setPaused(!paused); } return; }
+  if(paused) return;
   const duel = state==='boss' && bossMode==='duel';
+  if(state==='boss' && (e.code in MOVE_KEYS)){                  // pick a move by key
+    const m=availMoves()[MOVE_KEYS[e.code]];
+    if(m){ e.preventDefault();
+      if(duel){ if(bossPhase==='battle' && dodgeWin<=0) castMove(m); }
+      else if(canCast(m)){ equipped=m.key; Audio8.sfx('select'); }
+    }
+    return;
+  }
   // directional dodge (any direction works) during the wind-up window
-  if(duel && dodgeWin>0 && (e.code==='ArrowLeft'||e.code==='ArrowRight')){ e.preventDefault(); if(!paused) doDodge(e.code==='ArrowLeft'?'back':'fwd'); return; }
-  if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(paused) return;
+  if(duel && dodgeWin>0 && (e.code==='ArrowLeft'||e.code==='ArrowRight')){ e.preventDefault(); doDodge(e.code==='ArrowLeft'?'back':'fwd'); return; }
+  if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault();
     if(duel){ if(bossPhase==='intro') duelBegin(); else if(dodgeWin>0) doDodge('up'); return; }
     hop(); }
 });
@@ -1502,10 +1513,11 @@ function drawChargeGauge(x,y){
 }
 function drawMoveBar(){
   g.save();
-  const duel = bossMode==='duel';
+  const duel = bossMode==='duel', KEYS=['Z','X','C','V','B'];
   if(!duel) drawChargeGauge(14, H-54);                  // duel uses energy bars, not the charge meter
-  for(const r of moveBarRects()){
-    const m=r.m, sel=(m.key===equipped), cx=r.cx, cy=r.cy, rad=r.rad;
+  const rects=moveBarRects();
+  for(let ki=0; ki<rects.length; ki++){
+    const r=rects[ki], m=r.m, sel=(m.key===equipped), cx=r.cx, cy=r.cy, rad=r.rad;
     const aff = duel ? !(castCD>0||pikaCast) : canCast(m);   // duel: dimmed only while on cooldown / winding up
     g.globalAlpha = aff?1:0.45;
     // base disc
@@ -1530,6 +1542,9 @@ function drawMoveBar(){
     g.lineWidth=sel?5:3; g.strokeStyle=sel?m.col:'rgba(255,255,255,.30)';
     if(sel){ g.shadowColor=m.col; g.shadowBlur=14; }
     g.beginPath(); g.arc(cx,cy,rad,0,7); g.stroke(); g.shadowBlur=0;
+    // keyboard hint chip (Z X C V B)
+    if(KEYS[ki]){ g.fillStyle='rgba(0,0,0,.66)'; g.beginPath(); g.arc(cx, cy-rad+3, 11, 0, 7); g.fill();
+      g.fillStyle='#fff'; g.font='700 13px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(KEYS[ki], cx, cy-rad+4); }
     g.globalAlpha=1;
   }
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
