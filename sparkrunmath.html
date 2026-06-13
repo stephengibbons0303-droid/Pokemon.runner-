@@ -48,11 +48,15 @@ const cv = document.getElementById('game');
 const g  = cv.getContext('2d');
 const W = 960, H = 540;                 // fixed virtual resolution
 
-/* ---------- sprite sheet: Pikachu run cycle ---------- */
+/* ---------- sprite sheets: Pikachu run cycle + jump ---------- */
 const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386 };
 pika.img.onload = ()=>{ pika.ready=true; };
 pika.img.src = 'pikachu-run.png';
-const PIKA_H = 120;                       // on-screen draw height (px)
+const PIKA_H = 120;                       // on-screen run height (px)
+const jump = { img:new Image(), ready:false, frames:4, cw:318, ch:265 };
+jump.img.onload = ()=>{ jump.ready=true; };
+jump.img.src = 'pikachu-jump.png';
+const JUMP_H = 132;                       // on-screen jump height (px)
 
 /* ---------- lane geometry ---------- */
 const FLOOR_Y = 472;
@@ -73,6 +77,7 @@ const C = {
 const Audio8 = (()=> {
   let ctx=null, master=null, started=false, muted=false, timer=null, step=0;const bgm = new Audio('music.mp3');   // file sitting next to the .html
 bgm.loop = true; bgm.volume = 0.5;
+const cheer = new Audio('levelup.mp3'); cheer.volume = 0.85;   // end-of-level celebration
   // bouncy A-minor-ish loop (original): bass, arp, soft hat
   const bass = [57,57,55,52, 53,53,50,48];                 // MIDI
   const arp  = [72,76,79,76, 71,74,77,74, 69,72,76,72, 65,69,72,69];
@@ -110,6 +115,7 @@ bgm.loop = true; bgm.volume = 0.5;
     toggle(){ muted=!muted; if(muted) bgm.pause(); else if(started) bgm.play().catch(()=>{}); return muted; },
     isMuted(){return muted;},
     startMusic(){ ensure(); if(started) return; started=true; if(!muted) bgm.play().catch(()=>{}); },
+    cheer(){ if(muted) return; try{ cheer.currentTime=0; cheer.play().catch(()=>{}); }catch(e){} },
     sfx(kind){
       ensure(); if(!ctx||muted) return; if(ctx.state==='suspended')ctx.resume();
       const t=ctx.currentTime+0.01;
@@ -162,7 +168,8 @@ let state='menu';           // menu | play | resolve | levelup | over | won
 let levelIdx=0, stepInLvl=0, score=0, streak=0, hearts=3;
 let prizes=[];              // collected sparks per level
 
-const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0, frameT:0, frame:0 };
+const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0, frameT:0, frame:0,
+                 air:false, reachedApex:false, jumpT:0, jumpFrame:0 };
 let gate=null;              // {x, choices:[..], correct, locked, result}
 let speed=120;             // px/sec the gate approaches (ramps)
 let trail=[];              // sparkle particles
@@ -187,18 +194,21 @@ function spawnGate(){
   const base=92 + levelIdx*16;
   speed = base + stepInLvl*9;
   gate={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
-  player.lane=0; player.targetY=LANE_Y[0];
+  player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
 }
 
-/* ---------- input: tap hops up one lane, wraps at top ---------- */
+/* ---------- input: tap = jump to mid lane, double-tap = double jump to high ----------
+   Each tap raises one lane (ground→mid→high); she can't go past high until she lands.
+   After the gate locks she falls back to the ground (apex pose held during the drop). */
 function hop(){
   if(state==='menu'){ Audio8.startMusic(); startLevel(0); return; }
   if(state==='over'||state==='won'){ resetRun(); state='menu'; return; }
   if(state==='levelup'){ startLevel(levelIdx+1); return; }
   if(state!=='play' || !gate || gate.locked) return;
-  player.lane=(player.lane+1)%3;
+  if(player.lane>=2) return;             // already at the highest answer
+  player.lane++;
   player.targetY=LANE_Y[player.lane];
-  player.hopT=0.18;
+  player.air=true; player.reachedApex=false; player.jumpT=0;
   Audio8.sfx('hop');
 }
 
@@ -235,10 +245,23 @@ function update(dt){
   const running = (state==='play'||state==='resolve'||state==='levelup'||state==='menu');
   player.frameT += dt*(running?12:7);
   player.frame = Math.floor(player.frameT)%pika.frames;
-  if(player.hopT>0) player.hopT-=dt;
   if(player.moodT>0){ player.moodT-=dt; if(player.moodT<=0) player.mood='run'; }
-  // ease creature toward its lane
-  player.y += (player.targetY - player.y)*Math.min(1,dt*12);
+  // ease creature toward its lane height (rise on jump, fall on land)
+  player.y += (player.targetY - player.y)*Math.min(1,dt*11);
+
+  // ----- jump animation: rise through frames, then hold the apex pose -----
+  if(player.air){
+    const goingUp = player.targetY < LANE_Y[0]-1;          // climbing to a raised lane
+    if(!player.reachedApex){
+      player.jumpT += dt*14;
+      player.jumpFrame = Math.min(jump.frames-2, Math.floor(player.jumpT));   // 0..n-2 launch/rise
+      if(goingUp && (player.y - player.targetY) < 10) player.reachedApex=true; // hit the top
+    } else {
+      player.jumpFrame = jump.frames-1;                    // hold highest-point pose
+    }
+    // landed once she's almost back on the ground
+    if(!goingUp && (LANE_Y[0]-player.y) < 16){ player.air=false; player.reachedApex=false; }
+  }
 
   // trail sparkles
   if(state==='play'||state==='levelup'){
@@ -256,6 +279,7 @@ function update(dt){
       const chosen=gate.choices[player.lane];
       gate.result=(chosen===gate.ans);
       gate.resolveT=0.9;
+      player.targetY=LANE_Y[0];      // gate's passed — fall back to the ground
       if(gate.result){
         score+=10+streak*2; streak++; player.mood='happy'; player.moodT=0.7;
         Audio8.sfx('good'); flash={a:0.35,col:'#bff7d8'};
@@ -277,7 +301,7 @@ function update(dt){
       const L=LEVELS[levelIdx];
       if(stepInLvl>=L.count){
         prizes.push(levelIdx);
-        Audio8.sfx('win');
+        Audio8.sfx('win'); Audio8.cheer();
         for(let i=0;i<60;i++) confetti.push({x:W/2,y:H/2,vx:(Math.random()-0.5)*520,vy:-Math.random()*420-80,life:1.6,r:4+Math.random()*5,rot:Math.random()*6,vr:(Math.random()-0.5)*14,c:pick([C.glow,C.coral,C.mint,C.spark,'#fff'])});
         state = (levelIdx>=LEVELS.length-1)?'won':'levelup';
       } else {
@@ -317,22 +341,26 @@ function drawBackground(){
   g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(0,FLOOR_Y,W,4);
 }
 
-/* the mascot: Pikachu run-cycle sprite (with a soft spark glow) */
+/* the mascot: Pikachu run / jump sprite (with a soft spark glow) */
 function drawCreature(x,y,mood){
-  const bob=Math.sin(player.bob)*3 + (player.hopT>0?-12:0);
-  const s=PIKA_H/pika.ch, dw=pika.cw*s, dh=PIKA_H;
+  const airborne = player.air;
+  const bob = airborne ? 0 : Math.sin(player.bob)*3;     // no run-bob mid-jump
+  const sheet = (airborne && jump.ready) ? jump : pika;
+  const frameIdx = (sheet===jump) ? player.jumpFrame : player.frame;
+  const H0 = (sheet===jump) ? JUMP_H : PIKA_H;
+  const s=H0/sheet.ch, dw=sheet.cw*s, dh=H0;
   const feetY=y+28+bob;            // baseline the feet rest on
-  const dx=x-dw*0.56;              // nudge so the body sits on the choice line
+  const dx=x-dw*0.52;              // nudge so the body sits on the choice line
   const dy=feetY-dh;
   g.save();
   // soft glow behind the creature
   const gl=g.createRadialGradient(x,y+bob,4,x,y+bob,52);
   gl.addColorStop(0,'rgba(255,224,138,.45)'); gl.addColorStop(1,'rgba(255,224,138,0)');
   g.fillStyle=gl; g.beginPath(); g.arc(x,y+bob,52,0,7); g.fill();
-  if(pika.ready){
+  if(sheet.ready){
     if(mood==='oops'){ g.translate(x,feetY); g.rotate(0.12); g.translate(-x,-feetY); }
     g.imageSmoothingEnabled=true;
-    g.drawImage(pika.img, player.frame*pika.cw,0,pika.cw,pika.ch, dx,dy,dw,dh);
+    g.drawImage(sheet.img, frameIdx*sheet.cw,0,sheet.cw,sheet.ch, dx,dy,dw,dh);
     if(mood==='oops'){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.30)'; g.fillRect(dx,dy,dw,dh); }
   } else {
     // simple placeholder while the sprite sheet loads
@@ -454,9 +482,9 @@ function drawMenu(){
   drawCreature(W/2,300,'happy');
   // how-to
   g.font='600 22px Fredoka, sans-serif'; g.fillStyle=C.cream;
-  g.fillText('Tap to HOP up • land on the right answer', W/2, 388);
+  g.fillText('Tap to JUMP to the right answer', W/2, 388);
   g.fillStyle='rgba(255,244,230,.8)'; g.font='600 18px Fredoka, sans-serif';
-  g.fillText('ground → middle → high → back to ground', W/2, 416);
+  g.fillText('tap once = middle • double-tap = high jump', W/2, 416);
   // start button
   const bw=280,bx=W/2-bw/2,by=448,bh=60;
   g.fillStyle=C.leaf; rr(bx,by,bw,bh,22); g.fill();
