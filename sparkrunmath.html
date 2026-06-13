@@ -64,7 +64,12 @@ const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen hei
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
 // (more Pokémon to come; each gets its own sprite + tint.)
 const BOSSES = [
-  { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0' },
+  { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0', moves:[
+      { name:'Dragon Dance', file:'gyara_dragondance.png', col:'#b18cf0' },
+      { name:'Waterfall',    file:'gyara_waterfall.png',   col:'#5fb0e6' },
+      { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a' },
+      { name:'Ice Fang',     file:'gyara_icefang.png',     col:'#9fe0ff' },
+    ] },
   { name:'Boss 2',   file:null,           tint:'#8e6bd0' },
   { name:'Boss 3',   file:null,           tint:'#d06b8e' },
   { name:'Boss 4',   file:null,           tint:'#5fb98a' },
@@ -221,6 +226,7 @@ let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
+let bossCut=null, moveIdx=0;                          // attack move cut-in panel
 
 function setSpeedMode(on){
   if(on===speedMode) return;
@@ -239,7 +245,7 @@ function correctPop(x,y){
     stars.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.55+Math.random()*0.35,r:6+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*16,c:pick([C.glow,C.mint,C.spark,'#fff'])}); }
 }
 
-function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; }
+function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play';
@@ -269,9 +275,19 @@ function enterBoss(){
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   const hp=3+levelIdx;
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
-  bossChal=null; bossSpeed=140 + levelIdx*16;
+  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0;
   bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
+}
+// boss strikes back: play the next signature-move cut-in (Gyarados has 4)
+function bossAttack(){
+  const mv=boss.cfg.moves;
+  if(!mv||!mv.length){ boss.atk=0.5; flash={a:0.45,col:'#ffb3b8'}; bossMsg='It struck back!'; bossMsgT=1.0; return; }
+  const m=mv[moveIdx%mv.length]; moveIdx++;
+  bossCut={ m, spr:bossSprite(m.file), t:0, dur:1.35 };
+  boss.atk=0.6; flash={a:0.5,col:m.col};
+  bossMsg=boss.cfg.name+' used '+m.name+'!'; bossMsgT=1.35;
+  return bossCut.dur;
 }
 function spawnChallenge(){
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
@@ -437,15 +453,16 @@ function update(dt){
           else { bossMsg='⚡ Super effective!'; bossMsgT=1.1; }
         } else {
           streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
-          Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; boss.atk=0.5; bossMsg='Missed! It struck back!'; bossMsgT=1.1;
+          Audio8.sfx('bad'); const d=bossAttack(); if(d) bossChal.resolveT=d;   // play move cut-in
         }
         if(hearts<=0){ Audio8.sfx('bad'); state='over'; return; }
       }
       if(bossChal.locked){
         bossChal.resolveT-=dt;
-        if(bossChal.resolveT<=0 && !boss.defeated) spawnChallenge();
+        if(bossChal.resolveT<=0 && !boss.defeated){ bossCut=null; spawnChallenge(); }
       }
     }
+    if(bossCut){ bossCut.t+=dt; if(bossCut.t>=bossCut.dur) bossCut=null; }
   }
 }
 
@@ -701,8 +718,41 @@ function drawBoss(){
   drawCreature(PLAYER_X, player.y, player.mood);
   drawBossHUD();
   drawHUD();
-  if(bossMsgT>0) drawBossMsg();
   if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
+  if(bossCut) drawBossCutIn();                  // attack cut-in rides above the flash
+  else if(bossMsgT>0) drawBossMsg();
+}
+
+// dramatic move cut-in: bordered panel with the move art + name, pops in & out
+function drawBossCutIn(){
+  const c=bossCut, p=c.t/c.dur;
+  const in_=Math.min(1,c.t/0.16), out=Math.min(1,(c.dur-c.t)/0.22);
+  const a=Math.min(in_,out), pop=0.82+0.18*(1-(1-in_)*(1-in_));
+  const pw=540, ph=300, cx=W/2, cy=H/2-6;
+  g.save(); g.globalAlpha=a; g.translate(cx,cy); g.scale(pop,pop);
+  // panel
+  g.fillStyle='rgba(12,9,26,.94)'; rr(-pw/2,-ph/2,pw,ph,22); g.fill();
+  // art, cover-fit, clipped to the rounded panel (inset for the border)
+  const ix=-pw/2+10, iy=-ph/2+10, iw=pw-20, ih=ph-78;
+  g.save(); rr(ix,iy,iw,ih,14); g.clip();
+  if(c.spr&&c.spr.ready){
+    const im=c.spr.img, s=Math.max(iw/im.width, ih/im.height), w=im.width*s, h=im.height*s;
+    g.imageSmoothingEnabled=true; g.drawImage(im, ix+(iw-w)/2, iy+(ih-h)*0.32, w, h);  // bias toward the head/action
+  } else { g.fillStyle=c.m.col; g.fillRect(ix,iy,iw,ih); }
+  // speed-streak overlay sweeping across
+  g.globalAlpha=a*0.30; g.strokeStyle='#fff'; g.lineWidth=10;
+  for(let i=-2;i<8;i++){ const x=ix-120+i*70+ (p*140); g.beginPath(); g.moveTo(x,iy); g.lineTo(x+90,iy+ih); g.stroke(); }
+  g.restore();
+  // name ribbon
+  g.globalAlpha=a;
+  g.fillStyle=c.m.col; rr(-pw/2,ph/2-66,pw,56,0); g.fill();
+  g.fillStyle='rgba(0,0,0,.18)'; g.fillRect(-pw/2,ph/2-12,pw,2);
+  g.fillStyle='#1a1230'; g.font='800 30px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText(boss.cfg.name+' used '+c.m.name+'!', 0, ph/2-37);
+  // glowing border
+  g.strokeStyle=c.m.col; g.lineWidth=5; g.shadowColor=c.m.col; g.shadowBlur=18;
+  rr(-pw/2,-ph/2,pw,ph,22); g.stroke(); g.shadowBlur=0;
+  g.textAlign='left'; g.textBaseline='alphabetic'; g.restore();
 }
 
 function drawBossSprite(){
