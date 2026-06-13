@@ -91,7 +91,7 @@ function moveSeq(m){ return m ? MOVE_SEQ[m.key] : null; }
 // Gyarados special-move sequences (4-frame strips), keyed by the move's sprite file
 const BOSS_SEQ = {
   'gyara_dragondance.png':{ file:'gyara_seq_dd.png', cw:477, ch:436 },
-  'gyara_waterfall.png':  { file:'gyara_seq_wf.png', cw:228, ch:258 },
+  'gyara_waterfall.png':  { file:'gyara_seq_wf.png', cw:228, ch:220 },
   'gyara_icefang.png':    { file:'gyara_seq_if.png', cw:445, ch:247 },
 };
 for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
@@ -413,8 +413,9 @@ let bossCut=null, moveIdx=0;                          // boss attack-move cut-in
 let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
 // no-math lair duel (Gyarados): a static confrontation — chat, then tap moves vs. dodge attacks
 let bossMode='classic';        // 'duel' = lair fight, else the classic scrolling-math boss
-let bossPhase='';              // duel: 'intro' (dialogue) | 'battle'
-let dlg=null, dlgIdx=0;        // active dialogue lines + cursor
+let bossPhase='';              // duel: 'intro' (scripted) | 'battle'
+let introT=0, introIdx=0, introReady=false, introSteps=[];   // timed intro cutscene (sounds in sequence)
+let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
@@ -446,7 +447,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -486,9 +487,10 @@ function enterBoss(){
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
+    boss.subY=190;                                            // starts submerged, rises during enter
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
-    if(cfg.roar) voice(cfg.roar,0.9,'foe'); ashSay(ASH_HUH);   // foe roars, Ash sizes it up
+    buildIntro(cfg);                                          // kick off the scripted intro (sounds in sequence)
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
   }
@@ -504,11 +506,29 @@ const ASH_SPR={ ready:'ash_ready.png', point:'ash_point.png', punch:'ash_punch.p
 const ASH_X=108, ASH_H=176;
 let ashPose='ready', ashPoseT=0;
 function ashShow(pose,dur){ ashPose=pose; ashPoseT=dur; }   // momentary pose, reverts after dur
-// intro is just a beat to size up the foe (Ash banter here; Ash sprite to come) — then tap to battle
+// scripted intro: foe surfaces & roars → Pikachu → Ash greets/asks → Pikachu → Ash encourages → "Ready to battle?"
+function buildIntro(cfg){
+  const enc=pick([ASH_SPIRIT, ASH_BEST, ASH_COUNT]);
+  introSteps=[
+    { t:0.3, fn:()=>{ if(cfg.roar) voice(cfg.roar,0.95,'foe'); } },          // Gyarados surfaces & roars
+    { t:2.4, fn:()=>{ voice(PIKA_CRY,0.9,'pika'); } },                       // Pikachu responds
+    { t:3.7, fn:()=>{ ashSay(ASH_HEY); ashShow('point',1.0); } },           // Ash: "hey"
+    { t:4.9, fn:()=>{ ashSay(ASH_WANNA); ashShow('point',1.5); } },         // Ash: "wanna battle?"
+    { t:6.6, fn:()=>{ voice(PIKA_VOICE,0.9,'pika'); } },                     // Pikachu responds
+    { t:7.7, fn:()=>{ ashSay(enc); ashShow('point',1.7); } },               // Ash: encouragement
+    { t:9.2, fn:()=>{ introReady=true; } },                                 // → "Ready to battle?"
+  ];
+  introT=0; introIdx=0; introReady=false;
+}
+function tickIntro(dt){
+  introT+=dt;
+  while(introIdx<introSteps.length && introT>=introSteps[introIdx].t){ introSteps[introIdx].fn(); introIdx++; }
+}
+function skipIntro(){ introIdx=introSteps.length; introReady=true; }       // tap during the cutscene → jump to the prompt
 function duelBegin(){
   if(bossPhase!=='intro') return;
   bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
-  voice(PIKA_CRY,0.9,'pika'); ashSay(ASH_WANNA); ashShow('point',1.4);
+  voice(PIKA_CRY,0.9,'pika'); ashShow('point',1.4);
 }
 function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade; }   // hittable only when surfaced
 // tap a move: basic fires instantly, special winds up a moment first
@@ -701,7 +721,7 @@ function onPress(e){
   if(inGameplay() && pointInRect(PAUSE,p.x,p.y)){ setPaused(!paused); return; }   // pause / unpause
   if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
   if(state==='boss' && bossMode==='duel'){             // lair duel input
-    if(bossPhase==='intro'){ duelBegin(); return; }             // tap = start the battle
+    if(bossPhase==='intro'){ if(introReady) duelBegin(); else skipIntro(); return; }   // tap: skip cutscene, then start
     if(dodgeWin>0){                                             // wind-up: tap a dodge arrow (any one works)
       for(const r of dodgeBtnRects()){ if(pointInRect(r,p.x,p.y)){ doDodge(r.dir); return; } }
       return;
@@ -741,7 +761,7 @@ window.addEventListener('keydown',e=>{
   // directional dodge (any direction works) during the wind-up window
   if(duel && dodgeWin>0 && (e.code==='ArrowLeft'||e.code==='ArrowRight')){ e.preventDefault(); doDodge(e.code==='ArrowLeft'?'back':'fwd'); return; }
   if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault();
-    if(duel){ if(bossPhase==='intro') duelBegin(); else if(dodgeWin>0) doDodge('up'); return; }
+    if(duel){ if(bossPhase==='intro'){ if(introReady) duelBegin(); else skipIntro(); } else if(dodgeWin>0) doDodge('up'); return; }
     hop(); }
 });
 
@@ -837,11 +857,13 @@ function update(dt){
     if(boss.hurt>0) boss.hurt-=dt;
     if(boss.atk>0)  boss.atk-=dt;
     if(bossMsgT>0)  bossMsgT-=dt;
+    if(bossMode==='duel' && bossPhase==='intro' && !boss.defeated) tickIntro(dt);   // scripted intro audio
     if(boss.defeated){
       boss.deadT+=dt;
       if(boss.deadT>=1.8) bossDefeated();
     } else if(boss.enter>0){
       boss.enter-=dt;
+      if(bossMode==='duel') boss.subY=Math.max(0,(boss.enter/1.2))*190;   // rises up out of the lake
       if(boss.enter<=0 && bossMode==='classic') spawnChallenge();   // classic boss: start the math gates
     } else if(bossMode==='duel'){
       updateDuel(dt);                          // lair duel: dialogue then move-vs-dodge
@@ -1278,12 +1300,20 @@ function drawDodgeWave(){
 // intro beat: a top banner over the lair (kept clear of Pikachu) — Ash coaching will live here later
 function drawDuelIntro(){
   g.save(); g.textAlign='center';
-  g.font='700 40px Fredoka, sans-serif';
-  g.fillStyle=C.ink;  g.fillText('A wild '+boss.cfg.name+' appeared!', W/2+2, 120+2);
-  g.fillStyle=C.glow; g.fillText('A wild '+boss.cfg.name+' appeared!', W/2, 120);
-  const a=0.5+0.5*Math.sin(performance.now()/130);
-  g.globalAlpha=a; g.font='700 26px Fredoka, sans-serif'; g.fillStyle=C.cream;
-  g.fillText('Tap to battle!', W/2, 166);
+  if(introReady){                                       // the gate: tap to commence
+    g.font='700 44px Fredoka, sans-serif';
+    g.fillStyle=C.ink;  g.fillText('Ready to battle?', W/2+2, 120+2);
+    g.fillStyle=C.glow; g.fillText('Ready to battle?', W/2, 120);
+    const a=0.5+0.5*Math.sin(performance.now()/130);
+    g.globalAlpha=a; g.font='700 28px Fredoka, sans-serif'; g.fillStyle=C.cream;
+    g.fillText('Tap to start!', W/2, 168);
+  } else {                                               // the cutscene
+    g.font='700 38px Fredoka, sans-serif';
+    g.fillStyle=C.ink;  g.fillText('A wild '+boss.cfg.name+' appears!', W/2+2, 116+2);
+    g.fillStyle=C.glow; g.fillText('A wild '+boss.cfg.name+' appears!', W/2, 116);
+    g.globalAlpha=0.5; g.font='600 16px Fredoka, sans-serif'; g.fillStyle=C.cream;
+    g.fillText('(tap to skip)', W/2, H-26);
+  }
   g.restore(); g.textAlign='left';
 }
 function drawDodgePrompt(){
@@ -1448,7 +1478,7 @@ function drawBossCutIn(){
 
 const DUEL_DROP=114;            // lower Gyarados so he sits in the lake (duel only)
 function drawBossSprite(){
-  const slide = boss.enter>0 ? boss.enter*240 : 0;                 // glides in from the right
+  const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises from the lake instead of sliding
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : 0;
   const drop = (bossMode==='duel') ? DUEL_DROP + (boss.subY||0) : 0;   // duel: lowered + dive submersion
   const cx=BOSS_X+slide+shake, cy=BOSS_Y+drop+Math.sin(boss.bob)*10;
@@ -1469,10 +1499,8 @@ function drawBossSprite(){
     g.imageSmoothingEnabled=true;
     if(boss.hurt>0) drawTinted(im, 0,0,im.width,im.height, -w/2,-BOSS_H/2, w,BOSS_H, 'rgba(255,80,90,.42)');  // hit flash on the sprite only
     else g.drawImage(im, -w/2, -BOSS_H/2, w, BOSS_H);
-  } else {
-    g.scale(-1,1);                 // face the placeholder left, toward Pikachu
-    drawSerpentPlaceholder(boss.cfg.tint, boss.hurt>0);
   }
+  // (no placeholder: if the sprite hasn't loaded yet we simply draw nothing)
   g.restore();
 }
 
