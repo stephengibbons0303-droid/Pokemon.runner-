@@ -60,10 +60,22 @@ const JUMP_H = 132;                       // on-screen jump height (px)
 const celeb = { img:new Image(), ready:false, frames:4, cw:177, ch:179 };
 celeb.img.onload = ()=>{ celeb.ready=true; };
 celeb.img.src = 'pikachu-celebrate.png';
-const gya = { img:new Image(), ready:false };     // Gyarados boss (drop in gyarados.png)
-gya.img.onload = ()=>{ gya.ready=true; };
-gya.img.src = 'gyarados.png';
-const GYA_X = 760, GYA_Y = 232, GYA_H = 280;      // boss anchor + on-screen height
+const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
+// one boss per level — drop a PNG in and set its file; null = drawn placeholder.
+// (more Pokémon to come; each gets its own sprite + tint.)
+const BOSSES = [
+  { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0' },
+  { name:'Boss 2',   file:null,           tint:'#8e6bd0' },
+  { name:'Boss 3',   file:null,           tint:'#d06b8e' },
+  { name:'Boss 4',   file:null,           tint:'#5fb98a' },
+  { name:'Boss 5',   file:null,           tint:'#d0a05f' },
+];
+const bossImgs={};                                // lazy sprite cache, keyed by filename
+function bossSprite(file){
+  if(!file) return null;
+  if(!bossImgs[file]){ const o={img:new Image(),ready:false}; o.img.onload=()=>{o.ready=true;}; o.img.src=file; bossImgs[file]=o; }
+  return bossImgs[file];
+}
 
 /* ---------- lane geometry ---------- */
 const FLOOR_Y = 472;
@@ -207,7 +219,7 @@ let flash={a:0,col:'#fff'};
 let lastT=performance.now();
 let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
-let boss=null, bossChal=null, bossPhase='question', bossSpeed=140;  // end-of-level Gyarados battle
+let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
 
 function setSpeedMode(on){
@@ -247,32 +259,28 @@ function spawnGate(){
 }
 
 /* ============================================================
-   BOSS BATTLE — Gyarados caps every level (dodge & attack)
-   Alternates: a QUESTION (answer right → Thunderbolt, -1 HP)
-   and a WAVE (Gyarados blocks lanes → jump to a safe one).
+   BOSS BATTLE — a Pokémon caps every level (math attack duel)
+   Each question: jump to the right answer → Pikachu Thunderbolt,
+   boss −1 HP. A wrong answer → the boss strikes, −1 heart.
+   Empty the HP bar to defeat it. (One boss per level.)
    ============================================================ */
 function enterBoss(){
   state='boss'; gate=null; setSpeedMode(false);
+  const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   const hp=3+levelIdx;
-  boss={ hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
-  bossChal=null; bossPhase='question'; bossSpeed=140 + levelIdx*16;
-  bossMsg='A wild Gyarados appeared!'; bossMsgT=2.0;
+  boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
+  bossChal=null; bossSpeed=140 + levelIdx*16;
+  bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
 }
 function spawnChallenge(){
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
-  if(bossPhase==='question'){
-    const L=LEVELS[levelIdx]; const {q,ans}=L.gen(rnd(0,Math.max(0,L.count-1)));
-    const choices=makeChoices(ans);
-    bossChal={ type:'q', x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
-  } else {
-    const blocked=[false,false,false]; const n=Math.random()<0.5?1:2;
-    while(blocked.filter(Boolean).length<n) blocked[rnd(0,2)]=true;
-    bossChal={ type:'wave', x:W+90, blocked, locked:false, hit:false, resolveT:0 };
-  }
+  const L=LEVELS[levelIdx]; const {q,ans}=L.gen(rnd(0,Math.max(0,L.count-1)));
+  const choices=makeChoices(ans);
+  bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
 }
 function fireZap(){
-  const gx=GYA_X-60, gy=GYA_Y;
+  const gx=BOSS_X-60, gy=BOSS_Y;
   zaps.push({ life:0.34, max:0.34, x1:PLAYER_X+22, y1:player.y-6, x2:gx, y2:gy });
   correctPop(gx,gy);
 }
@@ -415,37 +423,27 @@ function update(dt){
       if(boss.deadT>=1.8) bossDefeated();
     } else if(boss.enter>0){
       boss.enter-=dt;
-      if(boss.enter<=0) spawnChallenge();      // start once Gyarados has slid in
+      if(boss.enter<=0) spawnChallenge();      // start once the boss has slid in
     } else if(bossChal){
       bossChal.x -= bossSpeed*dt;
       if(!bossChal.locked && bossChal.x<=PLAYER_X){
         bossChal.locked=true; bossChal.resolveT=0.7; player.targetY=LANE_Y[0];
-        if(bossChal.type==='q'){
-          bossChal.result=(player.lane===bossChal.correctLane);
-          if(bossChal.result){
-            boss.hp--; boss.hurt=0.6; streak++; score+=20;
-            Audio8.sfx('good'); flash={a:0.4,col:'#cdfaff'}; fireZap();
-            player.mood='happy'; player.moodT=0.7;
-            if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg='Gyarados fainted!'; bossMsgT=2.2; }
-            else { bossMsg='⚡ Super effective!'; bossMsgT=1.1; }
-          } else {
-            streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
-            Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; boss.atk=0.5; bossMsg='Missed!'; bossMsgT=1.0;
-          }
-        } else { // wave — must be on a clear lane
-          if(bossChal.blocked[player.lane]){
-            bossChal.hit=true; hearts--; player.mood='oops'; player.moodT=0.7;
-            Audio8.sfx('bad'); flash={a:0.45,col:'#9fd0ff'}; boss.atk=0.5; bossMsg='Splash hit!'; bossMsgT=1.0;
-          } else { Audio8.sfx('select'); bossMsg='Dodged!'; bossMsgT=0.8; }
+        bossChal.result=(player.lane===bossChal.correctLane);
+        if(bossChal.result){
+          boss.hp--; boss.hurt=0.6; streak++; score+=20;
+          Audio8.sfx('good'); flash={a:0.4,col:'#cdfaff'}; fireZap();
+          player.mood='happy'; player.moodT=0.7;
+          if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.2; }
+          else { bossMsg='⚡ Super effective!'; bossMsgT=1.1; }
+        } else {
+          streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
+          Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; boss.atk=0.5; bossMsg='Missed! It struck back!'; bossMsgT=1.1;
         }
         if(hearts<=0){ Audio8.sfx('bad'); state='over'; return; }
       }
       if(bossChal.locked){
         bossChal.resolveT-=dt;
-        if(bossChal.resolveT<=0 && !boss.defeated){
-          bossPhase=(bossPhase==='question')?'wave':'question';
-          spawnChallenge();
-        }
+        if(bossChal.resolveT<=0 && !boss.defeated) spawnChallenge();
       }
     }
   }
@@ -678,22 +676,26 @@ function drawOver(){
 function drawBoss(){
   // stormy tint over the normal backdrop
   g.fillStyle='rgba(20,16,48,.38)'; g.fillRect(0,0,W,FLOOR_Y);
-  drawGyarados();
-  // the active challenge: question cards or water-wave hazards
+  drawBossSprite();
+  // the active challenge: answer cards across the three lanes
   if(bossChal){
-    if(bossChal.type==='q'){
-      for(let lane=0;lane<3;lane++){
-        const y=LANE_Y[lane]-CARD_H/2;
-        let reveal=null;
-        if(bossChal.locked){
-          if(lane===bossChal.correctLane) reveal='right';
-          else if(lane===player.lane && !bossChal.result) reveal='wrong';
-        }
-        drawCard(bossChal.x, y, bossChal.choices[lane], LEVELS[levelIdx].theme, !bossChal.locked&&lane===player.lane, reveal);
+    for(let lane=0;lane<3;lane++){
+      const y=LANE_Y[lane]-CARD_H/2;
+      let reveal=null;
+      if(bossChal.locked){
+        if(lane===bossChal.correctLane) reveal='right';
+        else if(lane===player.lane && !bossChal.result) reveal='wrong';
       }
-    } else {
-      for(let lane=0;lane<3;lane++) if(bossChal.blocked[lane]) drawWaveObstacle(bossChal.x, LANE_Y[lane]);
+      drawCard(bossChal.x, y, bossChal.choices[lane], LEVELS[levelIdx].theme, !bossChal.locked&&lane===player.lane, reveal);
     }
+  }
+  // problem banner so the player can read the sum
+  if(bossChal){
+    const bw=300, bx=W/2-bw/2, by=58, bh=58;
+    g.fillStyle='rgba(35,22,53,.78)'; rr(bx,by,bw,bh,18); g.fill();
+    g.strokeStyle=C.glow; g.lineWidth=3; rr(bx,by,bw,bh,18); g.stroke();
+    g.fillStyle=C.cream; g.font='700 36px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(bossChal.q+' = ?', W/2, by+bh/2+2); g.textAlign='left'; g.textBaseline='alphabetic';
   }
   drawZaps();
   drawCreature(PLAYER_X, player.y, player.mood);
@@ -703,28 +705,31 @@ function drawBoss(){
   if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
 }
 
-function drawGyarados(){
+function drawBossSprite(){
   const slide = boss.enter>0 ? boss.enter*240 : 0;                 // glides in from the right
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : 0;
-  const cx=GYA_X+slide+shake, cy=GYA_Y+Math.sin(boss.bob)*10;
+  const cx=BOSS_X+slide+shake, cy=BOSS_Y+Math.sin(boss.bob)*10;
   let alpha=1, rot=0, sink=0;
   if(boss.defeated){ const p=Math.min(1,boss.deadT/1.8); alpha=1-p*0.9; rot=p*0.7; sink=p*150; }
+  const spr=bossSprite(boss.cfg.file);
   g.save(); g.globalAlpha=alpha; g.translate(cx,cy+sink); g.rotate(rot);
-  if(gya.ready){
-    const s=GYA_H/gya.img.height, w=gya.img.width*s;
+  if(spr&&spr.ready){
+    const s=BOSS_H/spr.img.height, w=spr.img.width*s;
     g.imageSmoothingEnabled=true;
-    g.drawImage(gya.img, -w/2, -GYA_H/2, w, GYA_H);
-    if(boss.hurt>0){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.40)'; g.fillRect(-w/2,-GYA_H/2,w,GYA_H); }
+    g.drawImage(spr.img, -w/2, -BOSS_H/2, w, BOSS_H);
+    if(boss.hurt>0){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.40)'; g.fillRect(-w/2,-BOSS_H/2,w,BOSS_H); }
   } else {
     g.scale(-1,1);                 // face the placeholder left, toward Pikachu
-    drawSerpentPlaceholder(boss.hurt>0);
+    drawSerpentPlaceholder(boss.cfg.tint, boss.hurt>0);
   }
   g.restore();
 }
 
-// stand-in sea-serpent until gyarados.png is supplied (centred on origin)
-function drawSerpentPlaceholder(hurt){
-  const body=hurt?'#7fb4e6':'#2f74c0', belly='#cfe9ff', fin='#1d5fa8';
+function darkenHex(hex,f){ const n=parseInt(hex.slice(1),16); const r=(n>>16)&255,gg=(n>>8)&255,b=n&255;
+  return 'rgb('+Math.round(r*f)+','+Math.round(gg*f)+','+Math.round(b*f)+')'; }
+// stand-in serpent boss until the real sprite is supplied (centred on origin)
+function drawSerpentPlaceholder(tint,hurt){
+  const base=tint||'#2f74c0', body=hurt?'#ffd0d0':base, belly='#eef6ff', fin=darkenHex(base,0.62);
   // coiled body segments (back to front)
   for(let i=6;i>=1;i--){
     const x=-i*34+60, y=Math.sin(i*0.9)*30;
@@ -750,20 +755,6 @@ function drawSerpentPlaceholder(hurt){
   g.beginPath(); g.moveTo(84,22); g.quadraticCurveTo(120,50,150,30); g.stroke();
 }
 
-function drawWaveObstacle(x,laneY){
-  g.save();
-  const r=46, cy=laneY;
-  const grd=g.createRadialGradient(x,cy,6,x,cy,r);
-  grd.addColorStop(0,'#bfe9ff'); grd.addColorStop(.6,'#4aa3e6'); grd.addColorStop(1,'#1f6fc0');
-  g.fillStyle=grd; g.beginPath(); g.arc(x,cy,r,0,7); g.fill();
-  // foam crest
-  g.fillStyle='rgba(255,255,255,.85)';
-  for(let i=0;i<5;i++){ const a=-0.6+i*0.4; g.beginPath(); g.arc(x+Math.cos(a)*r*0.8, cy+Math.sin(a)*r*0.8, 8,0,7); g.fill(); }
-  // warning glint
-  g.strokeStyle='rgba(255,255,255,.6)'; g.lineWidth=3; g.beginPath(); g.arc(x,cy,r-4,0,7); g.stroke();
-  g.restore();
-}
-
 function drawZaps(){
   zaps.forEach(z=>{
     const a=Math.max(0,z.life/z.max);
@@ -783,7 +774,7 @@ function drawBossHUD(){
   g.save();
   g.fillStyle='rgba(35,22,53,.8)'; rr(bx-6,by-16,bw+12,bh+24,12); g.fill();
   g.fillStyle=C.cream; g.font='700 16px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='middle';
-  g.fillText('GYARADOS', bx, by-4);
+  g.fillText((boss.cfg.name||'BOSS').toUpperCase(), bx, by-4);
   // bar
   g.fillStyle='rgba(0,0,0,.45)'; rr(bx,by+4,bw,bh-4,8); g.fill();
   const frac=Math.max(0,boss.hp)/boss.maxHp;
@@ -795,9 +786,9 @@ function drawBossHUD(){
 function drawBossMsg(){
   const a=Math.min(1,bossMsgT*2);
   g.save(); g.globalAlpha=a; g.textAlign='center';
-  g.font='700 40px Fredoka, sans-serif';
-  g.fillStyle=C.ink;  g.fillText(bossMsg, W/2+2, 120+2);
-  g.fillStyle=C.glow; g.fillText(bossMsg, W/2, 120);
+  g.font='700 38px Fredoka, sans-serif';
+  g.fillStyle=C.ink;  g.fillText(bossMsg, W/2+2, 168+2);
+  g.fillStyle=C.glow; g.fillText(bossMsg, W/2, 168);
   g.restore(); g.textAlign='left';
 }
 
