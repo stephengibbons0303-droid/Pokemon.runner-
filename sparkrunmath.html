@@ -57,6 +57,9 @@ const jump = { img:new Image(), ready:false, frames:4, cw:318, ch:265 };
 jump.img.onload = ()=>{ jump.ready=true; };
 jump.img.src = 'pikachu-jump.png';
 const JUMP_H = 132;                       // on-screen jump height (px)
+const celeb = { img:new Image(), ready:false, frames:4, cw:177, ch:179 };
+celeb.img.onload = ()=>{ celeb.ready=true; };
+celeb.img.src = 'pikachu-celebrate.png';
 
 /* ---------- lane geometry ---------- */
 const FLOOR_Y = 472;
@@ -369,6 +372,21 @@ function drawCreature(x,y,mood){
   g.restore();
 }
 
+/* celebrating Pikachu (level-complete / win screens) */
+function drawCelebrate(cx,feetY,h){
+  if(!celeb.ready) return;
+  const f=Math.floor(performance.now()/130)%celeb.frames;
+  const bounce=Math.abs(Math.sin(performance.now()/150))*8;   // little victory hop
+  const s=h/celeb.ch, dw=celeb.cw*s;
+  g.save();
+  const gl=g.createRadialGradient(cx,feetY-h*0.45,6,cx,feetY-h*0.45,h*0.7);
+  gl.addColorStop(0,'rgba(255,224,138,.5)'); gl.addColorStop(1,'rgba(255,224,138,0)');
+  g.fillStyle=gl; g.beginPath(); g.arc(cx,feetY-h*0.45,h*0.7,0,7); g.fill();
+  g.imageSmoothingEnabled=true;
+  g.drawImage(celeb.img, f*celeb.cw,0,celeb.cw,celeb.ch, cx-dw/2, feetY-h-bounce, dw, h);
+  g.restore();
+}
+
 /* themed answer container with a number */
 function drawCard(x,y,val,theme,selected,reveal){
   // reveal: 'right' green, 'wrong' red-dim, null normal
@@ -493,6 +511,7 @@ function drawMenu(){
 
 function drawLevelUp(){
   panel('Level Done!','You earned a Spark Friend ✨','Tap for next level →', ()=>{
+    drawCelebrate(W/2, 150, 150);            // cheering Pikachu above the title
     // show collected prizes as little creatures
     const n=prizes.length; const startX=W/2-(n-1)*36;
     for(let i=0;i<n;i++){ g.save(); g.translate(startX+i*72, H/2+18); g.scale(.55,.55); drawCreature(0,0,'happy'); g.restore(); }
@@ -502,6 +521,7 @@ function drawLevelUp(){
 }
 function drawWon(){
   panel('You Did It! 🏆', 'Final score: '+score, 'Tap to play again', ()=>{
+    drawCelebrate(W/2, 152, 162);            // big cheering Pikachu above the title
     const n=prizes.length; const startX=W/2-(n-1)*40;
     for(let i=0;i<n;i++){ g.save(); g.translate(startX+i*80, H/2+18); g.scale(.6,.6); drawCreature(0,0,'happy'); g.restore(); }
   });
