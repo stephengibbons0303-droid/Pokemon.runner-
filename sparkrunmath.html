@@ -291,13 +291,15 @@ function crossfade(toFast){
   };
 })();
 
-/* one-shot voice clips (boss roars / cries) — cached <audio>, respect the mute toggle */
-const VOICES={};
-function voice(file, vol){
+/* one-shot voice clips (boss / Pikachu / Ash) — cached <audio>, channelled so a
+   character never talks over itself; respects the mute toggle */
+const VOICES={}, VCHAN={};
+function voice(file, vol, chan){
   try{
     let a=VOICES[file];
     if(!a){ a=new Audio(file); VOICES[file]=a; }
     a.volume = vol==null?0.9:vol; a.currentTime=0;
+    if(chan){ const prev=VCHAN[chan]; if(prev && prev!==a){ try{prev.pause();}catch(e){} } VCHAN[chan]=a; }
     if(!Audio8.isMuted()) a.play().catch(()=>{});
   }catch(e){}
 }
@@ -391,7 +393,7 @@ let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX 
 let bossMode='classic';        // 'duel' = lair fight, else the classic scrolling-math boss
 let bossPhase='';              // duel: 'intro' (dialogue) | 'battle'
 let dlg=null, dlgIdx=0;        // active dialogue lines + cursor
-let foeTimer=0, dodgeWin=0, castCD=0;   // foe attack countdown, open dodge window, player move cooldown
+let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 
 function setSpeedMode(on){
   if(on===speedMode) return;
@@ -448,42 +450,51 @@ function enterBoss(){
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   bossMode = cfg.duel ? 'duel' : 'classic';
   const hp = cfg.duel ? 10 : (4+levelIdx*3);          // duel lasts a bit longer so dodging matters
-  boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
+  boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
+         subY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false };   // duel: dive/replenish + rile state
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0;
-    bossMsg=''; bossMsgT=0; if(cfg.roar) voice(cfg.roar);   // a wild roar greets you
+    bossMsg=''; bossMsgT=0;
+    if(cfg.roar) voice(cfg.roar,0.9,'foe'); ashSay(ASH_HUH);   // foe roars, Ash sizes it up
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
   }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
-const PIKA_VOICE='pika_voice.mp3', PIKA_THUNDER='pika_thunder.mp3', PIKA_CRY='pika_cry.mp3';
-// intro is just a beat to size up the foe (room here later for Ash coaching) — then tap to battle
+const PIKA_VOICE='pika_voice.mp3', PIKA_THUNDER='pika_thunder.mp3', PIKA_CRY='pika_cry.mp3', PIKA_ANGRY='pika_angry.mp3';
+const ASH_HEY='ash_hey.mp3', ASH_HUH='ash_battlehuh.mp3', ASH_WANNA='ash_wannabattle.mp3';
+const ASH_SPIRIT='ash_spirit.mp3', ASH_BEST='ash_dobest.mp3', ASH_COUNT='ash_counton.mp3';
+const ASH_CHEER=[ASH_SPIRIT, ASH_BEST];
+function ashSay(file,vol){ voice(file, vol==null?0.95:vol, 'ash'); }   // Ash coaches on his own channel
+// intro is just a beat to size up the foe (Ash banter here; Ash sprite to come) — then tap to battle
 function duelBegin(){
   if(bossPhase!=='intro') return;
-  bossPhase='battle'; foeTimer=2.4; bossMsg='Battle!'; bossMsgT=1.0; voice(PIKA_CRY,0.9);   // Pikachu battle cry
+  bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
+  voice(PIKA_CRY,0.9,'pika'); ashSay(ASH_WANNA);
 }
+function canTarget(){ return !boss.defeated && boss.diveState==='up'; }   // Gyarados is only hittable when surfaced
 function castMove(m){
   if(castCD>0) return;
+  if(!canTarget()){ Audio8.sfx('bad'); return; }     // can't hit him while he's under water
   if(!canCast(m)){ Audio8.sfx('bad'); return; }
   equipped=m.key;
   charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
-  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; voice(PIKA_THUNDER,0.8); }   // Pikachu attack voice
-  else voice(PIKA_VOICE,0.8);                                              // setup move (charm/reflect)
+  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; voice(PIKA_THUNDER,0.8,'pika'); if(Math.random()<0.3) ashSay(pick(ASH_CHEER)); }
+  else voice(PIKA_VOICE,0.8,'pika');                 // setup move (charm/reflect)
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   pikaFire(m); Audio8.sfx('good'); flash={a:0.35,col:m.col};
   player.mood='happy'; player.moodT=0.5; castCD=0.5;
   bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
-  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9); }   // foe faints
+  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
 }
 function foeAttack(){
   boss.atk=0.6; flash={a:0.4,col:'#9fd8ff'};
-  if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7);
-  dodgeWin=1.3; foeTimer=3.6;                        // open the dodge window; schedule next strike
+  if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7,'foe');
+  dodgeWin=1.3/boss.power; dodgeMax=dodgeWin; foeTimer=3.6/boss.power;   // stronger Gyarados = tighter window + faster strikes
   bossMsg=''; bossMsgT=0;
 }
 function doDodge(){
@@ -492,17 +503,54 @@ function doDodge(){
   Audio8.sfx('hop'); player.mood='happy'; player.moodT=0.4;
   bossMsg='Dodged!'; bossMsgT=0.7;
 }
+// Pikachu nearly down (last heart) → angry surge that tops his energy back up
+function rileUp(){
+  boss.riled=true; charge=MAX_CHARGE; pikaShield=Math.max(pikaShield,1);
+  voice(PIKA_ANGRY,1.0,'pika'); ashSay(ASH_COUNT);
+  flash={a:0.5,col:'#ffd23a'}; player.mood='happy'; player.moodT=0.6;
+  bossMsg='Pikachu is fired up! ⚡'; bossMsgT=1.8;
+}
 function updateDuel(dt){
   if(castCD>0) castCD-=dt;
   // let a dodge-hop fall back down once it has peaked
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
   if(bossPhase!=='battle' || boss.defeated) return;
+
+  // --- Gyarados dive → replenish → re-emerge stronger (once, when low on energy) ---
+  if(boss.diveState==='up' && boss.dives<1 && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
+    boss.diveState='diving'; boss.diveT=0; dodgeWin=0;
+    if(boss.cfg.cry) voice(boss.cfg.cry,0.7,'foe');
+    bossMsg=boss.cfg.name+' dives to recover!'; bossMsgT=1.6;
+  }
+  if(boss.diveState!=='up'){
+    boss.diveT+=dt;
+    if(boss.diveState==='diving'){
+      boss.subY=Math.min(170, boss.subY+dt*240);
+      if(boss.subY>=170){ boss.diveState='down'; boss.diveT=0; }
+    } else if(boss.diveState==='down'){
+      if(boss.diveT>=1.8){
+        boss.hp=Math.min(boss.maxHp, boss.hp+Math.round(boss.maxHp*0.45));   // replenish a bit
+        boss.dives++; boss.power=1.35; boss.diveState='rising'; boss.diveT=0;
+        if(boss.cfg.roar2) voice(boss.cfg.roar2,0.9,'foe');
+        bossMsg=boss.cfg.name+' surges back stronger!'; bossMsgT=1.8;
+      }
+    } else if(boss.diveState==='rising'){
+      boss.subY=Math.max(0, boss.subY-dt*210);
+      if(boss.subY<=0){ boss.diveState='up'; foeTimer=1.6; }
+    }
+    return;   // no normal attacks while he's submerged
+  }
+
+  // --- normal attack cadence + dodge window ---
   if(dodgeWin>0){
     dodgeWin-=dt;
     if(dodgeWin<=0){                                  // window closed without a dodge → take the hit
       if(pikaShield>0){ pikaShield--; bossMsg='Blocked! 🛡️'; bossMsgT=1.0; Audio8.sfx('select'); }
-      else { hearts--; oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9; }
-      if(hearts<=0){ state='over'; }
+      else {
+        hearts--; oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9;
+        if(hearts<=0){ state='over'; return; }
+        if(hearts===1 && !boss.riled) rileUp();       // last-heart comeback surge
+      }
     }
   } else { foeTimer-=dt; if(foeTimer<=0) foeAttack(); }
 }
@@ -1104,22 +1152,28 @@ function drawOver(){
   });
 }
 
-/* ----- Gyarados lair duel scene (no maths) ----- */
-function drawLake(){
-  // dusk-ish lair mood over the meadow, then a lake the foe rises from
-  g.fillStyle='rgba(18,28,58,.34)'; g.fillRect(0,0,W,FLOOR_Y);
+/* ----- Gyarados lair duel scene (no maths) -----
+   The lake is drawn in two layers: the back basin sits behind Gyarados, the
+   front surface is drawn OVER his lower body so he reads as partly submerged. */
+const LAKE={x:700, cy:454, rx:362, ry:44};   // near-water surface ellipse
+function drawLairBack(){
+  g.fillStyle='rgba(18,28,58,.34)'; g.fillRect(0,0,W,FLOOR_Y);   // dusk lair mood over the meadow
+  g.save();                                                      // basin behind the foe
+  g.fillStyle='#1d4576'; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy+8, LAKE.rx+14, LAKE.ry+14, 0,0,7); g.fill();
+  g.restore();
+}
+function drawLakeFront(){
   g.save();
-  const wy=FLOOR_Y-4, cx=680;
-  g.fillStyle='#234e86'; g.beginPath(); g.ellipse(cx, wy+34, 392, 74, 0,0,7); g.fill();
-  g.fillStyle='#3170b0'; g.beginPath(); g.ellipse(cx, wy+24, 372, 58, 0,0,7); g.fill();
-  g.fillStyle='rgba(150,210,255,.18)'; g.beginPath(); g.ellipse(cx, wy+16, 340, 44, 0,0,7); g.fill();
-  // ripples + a moving shimmer
+  g.fillStyle='#2c66a6'; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy, LAKE.rx, LAKE.ry, 0,0,7); g.fill();
+  g.fillStyle='rgba(120,200,255,.20)'; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy-6, LAKE.rx-26, LAKE.ry-8, 0,0,7); g.fill();
+  // moving ripple rings around where Gyarados meets the surface
   g.strokeStyle='rgba(255,255,255,.22)'; g.lineWidth=2;
-  for(let i=0;i<4;i++){ const rx=120+i*70+Math.sin(world*0.02+i)*6; g.beginPath(); g.ellipse(cx, wy+16, rx, rx*0.12, 0, 0, 7); g.stroke(); }
+  for(let i=0;i<4;i++){ const rx=120+i*64+Math.sin(world*0.02+i)*6; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy-4, rx, rx*0.10, 0, 0, 7); g.stroke(); }
+  g.fillStyle='rgba(255,255,255,.10)'; g.fillRect(LAKE.x-LAKE.rx, LAKE.cy-LAKE.ry, LAKE.rx*2, 3);   // surface glint line
   g.restore();
 }
 function drawDodgeWave(){
-  const p=1-Math.max(0,dodgeWin/1.3);                 // wave sweeps from the foe toward Pikachu
+  const p=1-Math.max(0,dodgeWin/dodgeMax);            // wave sweeps from the foe toward Pikachu
   const x=(BOSS_X-70) + ((PLAYER_X+30)-(BOSS_X-70))*p;
   g.save(); g.fillStyle='rgba(130,205,255,.75)'; g.strokeStyle='rgba(255,255,255,.8)'; g.lineWidth=3;
   g.beginPath(); g.moveTo(x+40,FLOOR_Y);
@@ -1149,8 +1203,9 @@ function drawDodgePrompt(){
   g.textAlign='left';
 }
 function drawDuel(){
-  drawLake();
+  drawLairBack();
   drawBossSprite();
+  drawLakeFront();          // water in front of his lower body → partly submerged
   if(dodgeWin>0) drawDodgeWave();
   drawZaps();
   if(pikaShield>0) drawShield(PLAYER_X, player.y);
@@ -1236,10 +1291,12 @@ function drawBossCutIn(){
   g.textAlign='left'; g.textBaseline='alphabetic'; g.restore();
 }
 
+const DUEL_DROP=114;            // lower Gyarados so he sits in the lake (duel only)
 function drawBossSprite(){
   const slide = boss.enter>0 ? boss.enter*240 : 0;                 // glides in from the right
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : 0;
-  const cx=BOSS_X+slide+shake, cy=BOSS_Y+Math.sin(boss.bob)*10;
+  const drop = (bossMode==='duel') ? DUEL_DROP + (boss.subY||0) : 0;   // duel: lowered + dive submersion
+  const cx=BOSS_X+slide+shake, cy=BOSS_Y+drop+Math.sin(boss.bob)*10;
   let alpha=1, rot=0, sink=0;
   if(boss.defeated){ const p=Math.min(1,boss.deadT/1.8); alpha=1-p*0.9; rot=p*0.7; sink=p*150; }
   // swap to the aggressive reaction pose while flinching or attacking
