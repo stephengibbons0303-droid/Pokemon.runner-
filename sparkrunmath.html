@@ -88,6 +88,13 @@ const MOVE_SEQ = {
 };
 for(const k in MOVE_SEQ){ const s=MOVE_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 function moveSeq(m){ return m ? MOVE_SEQ[m.key] : null; }
+// Gyarados special-move sequences (4-frame strips), keyed by the move's sprite file
+const BOSS_SEQ = {
+  'gyara_dragondance.png':{ file:'gyara_seq_dd.png', cw:477, ch:436 },
+  'gyara_waterfall.png':  { file:'gyara_seq_wf.png', cw:228, ch:258 },
+  'gyara_icefang.png':    { file:'gyara_seq_if.png', cw:445, ch:247 },
+};
+for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
 // (more Pokémon to come; each gets its own sprite + tint.)
@@ -471,7 +478,7 @@ function enterBoss(){
   const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false,
-         evade:null, atkKind:'basic', atkDmg:BASIC_DMG };   // duel: dive/replenish, submerge-dodge, attack type
+         evade:null, atkKind:'basic', atkDmg:BASIC_DMG, atkSeq:null, atkN:0 };   // + special-move animation
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
@@ -528,6 +535,7 @@ function applyPikaHit(m){
   bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
   if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
 }
+const BOSS_ATK_SEQS=['gyara_waterfall.png','gyara_icefang.png'];
 function foeAttack(){
   const special=Math.random()<0.4;                    // basic = quick/weaker, special = slower/stronger
   boss.atkKind=special?'special':'basic'; boss.atkDmg=special?SPECIAL_DMG:BASIC_DMG;
@@ -536,6 +544,7 @@ function foeAttack(){
   const windup=(special?1.5:0.85)/boss.power;
   dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.8:2.8)/boss.power;
   bossMsg=special?(boss.cfg.name+' charges a big attack!'):''; bossMsgT=special?1.0:0;
+  if(special){ const sq=BOSS_SEQ[BOSS_ATK_SEQS[boss.atkN++ % BOSS_ATK_SEQS.length]]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }   // animate the move
 }
 // any of the 3 buttons dodges; direction just changes the motion (placeholder until a roll sheet lands)
 function doDodge(dir){
@@ -572,6 +581,7 @@ function updateDuel(dt){
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
   // resolve a special move once its wind-up finishes
   if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const m=pikaCast.m; pikaCast=null; applyPikaHit(m); Audio8.sfx('good'); castCD=0.5; } }
+  if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
   if(bossPhase!=='battle' || boss.defeated) return;
 
   // --- Gyarados quick submerge-dodge dip (evading a Pikachu hit) ---
@@ -594,6 +604,7 @@ function updateDuel(dt){
         boss.hp=Math.min(boss.maxHp, boss.hp+Math.round(boss.maxHp*0.45));   // replenish a bit
         boss.dives++; boss.power=1.35; boss.diveState='rising'; boss.diveT=0;
         if(boss.cfg.roar2) voice(boss.cfg.roar2,0.9,'foe');
+        const dd=BOSS_SEQ['gyara_dragondance.png']; if(dd) boss.atkSeq={seq:dd,t:0,dur:1.2};   // power-up animation
         bossMsg=boss.cfg.name+' surges back stronger!'; bossMsgT=1.8;
       }
     } else if(boss.diveState==='rising'){
@@ -1447,8 +1458,13 @@ function drawBossSprite(){
   const reacting = !boss.defeated && (boss.hurt>0 || boss.atk>0) && boss.cfg.hurtFile;
   let spr = reacting ? bossSprite(boss.cfg.hurtFile) : bossSprite(boss.cfg.file);
   if(!(spr&&spr.ready)) spr=bossSprite(boss.cfg.file);     // fall back to idle if not loaded yet
+  const aseq = (boss.atkSeq && boss.atkSeq.seq.ready) ? boss.atkSeq : null;   // animated special move
   g.save(); g.globalAlpha=alpha; g.translate(cx,cy+sink); g.rotate(rot);
-  if(spr&&spr.ready){
+  if(aseq){
+    const sq=aseq.seq, p=Math.min(1,aseq.t/aseq.dur), fi=Math.min(sq.n-1,Math.floor(p*sq.n));
+    const SH=BOSS_H*1.3, s=SH/sq.ch, w=sq.cw*s;
+    g.imageSmoothingEnabled=true; g.drawImage(sq.img, fi*sq.cw,0,sq.cw,sq.ch, -w/2,-SH/2, w,SH);
+  } else if(spr&&spr.ready){
     const im=spr2d(spr), s=BOSS_H/im.height, w=im.width*s;
     g.imageSmoothingEnabled=true;
     if(boss.hurt>0) drawTinted(im, 0,0,im.width,im.height, -w/2,-BOSS_H/2, w,BOSS_H, 'rgba(255,80,90,.42)');  // hit flash on the sprite only
