@@ -192,7 +192,7 @@ function cleanSheet(img, frames){
 // unlock = level index the move becomes available; cost/gain feed the charge meter.
 const MAX_CHARGE = 6;
 const PIKA_MOVES = [
-  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
+  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', kind:'basic', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
   { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
   { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit' },
   { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit' },
@@ -400,6 +400,9 @@ let bossPhase='';              // duel: 'intro' (dialogue) | 'battle'
 let dlg=null, dlgIdx=0;        // active dialogue lines + cursor
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
+let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
+const BASIC_DMG=10, SPECIAL_DMG=15;    // % damage per hit (basic = quick/less, special = slower/more)
+const duelDmg=m=> (m && m.kind==='basic') ? BASIC_DMG : SPECIAL_DMG;
 
 function setSpeedMode(on){
   if(on===speedMode) return;
@@ -426,7 +429,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -455,15 +458,17 @@ function enterBoss(){
   state='boss'; gate=null; setSpeedMode(false);
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   bossMode = cfg.duel ? 'duel' : 'classic';
-  const hp = cfg.duel ? 10 : (4+levelIdx*3);          // duel lasts a bit longer so dodging matters
+  const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
-         subY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false };   // duel: dive/replenish + rile state
+         subY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false,
+         evade:null, atkKind:'basic', atkDmg:BASIC_DMG };   // duel: dive/replenish, submerge-dodge, attack type
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
+    pikaHP=100; pikaCast=null;
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
     if(cfg.roar) voice(cfg.roar,0.9,'foe'); ashSay(ASH_HUH);   // foe roars, Ash sizes it up
@@ -488,26 +493,39 @@ function duelBegin(){
   bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
   voice(PIKA_CRY,0.9,'pika'); ashSay(ASH_WANNA); ashShow('point',1.4);
 }
-function canTarget(){ return !boss.defeated && boss.diveState==='up'; }   // Gyarados is only hittable when surfaced
+function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade; }   // hittable only when surfaced
+// tap a move: basic fires instantly, special winds up a moment first
 function castMove(m){
-  if(castCD>0) return;
-  if(!canTarget()){ Audio8.sfx('bad'); return; }     // can't hit him while he's under water
-  if(!canCast(m)){ Audio8.sfx('bad'); return; }
-  equipped=m.key;
-  charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
-  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; voice(PIKA_THUNDER,0.8,'pika'); if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); } }
-  else voice(PIKA_VOICE,0.8,'pika');                 // setup move (charm/reflect)
+  if(castCD>0 || pikaCast || boss.defeated) return;
+  equipped=m.key; player.mood='happy'; player.moodT=0.5;
+  if(m.kind==='special' || m.kind===undefined){      // special = slower build-up, more damage
+    pikaCast={m, t:0, windup:0.55}; voice(PIKA_VOICE,0.7,'pika'); bossMsg=m.name+'…'; bossMsgT=0.6;
+  } else {                                            // basic = quick, less damage
+    applyPikaHit(m); Audio8.sfx('good'); castCD=0.42;
+  }
+}
+// resolve a Pikachu hit (after the wind-up for specials) — Gyarados may submerge to dodge
+function applyPikaHit(m){
+  if(!canTarget()){ pikaFire(m); return; }            // he's already under → whiff
+  if(Math.random()<0.28){                             // submerge-dodge
+    boss.evade={t:0,dur:0.7}; if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
+    bossMsg=boss.cfg.name+' slips under!'; bossMsgT=1.0; pikaFire(m); return;
+  }
+  boss.hp=Math.max(0, boss.hp-duelDmg(m)); boss.hurt=0.6;
+  pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:0.32,col:m.col};
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
-  pikaFire(m); Audio8.sfx('good'); flash={a:0.35,col:m.col};
-  player.mood='happy'; player.moodT=0.5; castCD=0.5;
+  if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); }
   bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
   if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
 }
 function foeAttack(){
-  boss.atk=0.6; flash={a:0.4,col:'#9fd8ff'};
+  const special=Math.random()<0.4;                    // basic = quick/weaker, special = slower/stronger
+  boss.atkKind=special?'special':'basic'; boss.atkDmg=special?SPECIAL_DMG:BASIC_DMG;
+  boss.atk=0.6; flash={a:0.4,col:special?'#7aa6ff':'#9fd8ff'};
   if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7,'foe');
-  dodgeWin=1.3/boss.power; dodgeMax=dodgeWin; foeTimer=3.6/boss.power;   // stronger Gyarados = tighter window + faster strikes
-  bossMsg=''; bossMsgT=0;
+  const windup=(special?1.5:0.85)/boss.power;
+  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.8:2.8)/boss.power;
+  bossMsg=special?(boss.cfg.name+' charges a big attack!'):''; bossMsgT=special?1.0:0;
 }
 // any of the 3 buttons dodges; direction just changes the motion (placeholder until a roll sheet lands)
 function doDodge(dir){
@@ -525,9 +543,9 @@ function dodgeBtnRects(){
   const D=100, gap=46, cy=H-126, tot=3*D+2*gap; let x=W/2-tot/2;
   return items.map(([dir,glyph])=>{ const r={dir,glyph,x,y:cy-D/2,w:D,h:D,cx:x+D/2,cy,rad:D/2}; x+=D+gap; return r; });
 }
-// Pikachu nearly down (last heart) → angry surge that tops his energy back up
+// Pikachu nearly out of energy → angry surge that replenishes some of his bar
 function rileUp(){
-  boss.riled=true; charge=MAX_CHARGE; pikaShield=Math.max(pikaShield,1);
+  boss.riled=true; pikaHP=Math.min(100, pikaHP+24);
   voice(PIKA_ANGRY,1.0,'pika'); ashSay(ASH_COUNT); ashShow('point',1.6);
   flash={a:0.5,col:'#ffd23a'}; player.mood='happy'; player.moodT=0.6;
   bossMsg='Pikachu is fired up! ⚡'; bossMsgT=1.8;
@@ -542,7 +560,13 @@ function updateDuel(dt){
     pikaDX=Math.sin(p*Math.PI)*dodgeRoll.dir*98; if(p>=1){ dodgeRoll=null; pikaDX=0; } }
   // let a dodge-hop fall back down once it has peaked
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
+  // resolve a special move once its wind-up finishes
+  if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const m=pikaCast.m; pikaCast=null; applyPikaHit(m); Audio8.sfx('good'); castCD=0.5; } }
   if(bossPhase!=='battle' || boss.defeated) return;
+
+  // --- Gyarados quick submerge-dodge dip (evading a Pikachu hit) ---
+  if(boss.evade){ boss.evade.t+=dt; boss.subY=Math.sin(Math.min(1,boss.evade.t/boss.evade.dur)*Math.PI)*150;
+    if(boss.evade.t>=boss.evade.dur){ boss.evade=null; boss.subY=0; } return; }
 
   // --- Gyarados dive → replenish → re-emerge stronger (once, when low on energy) ---
   if(boss.diveState==='up' && boss.dives<1 && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
@@ -575,9 +599,10 @@ function updateDuel(dt){
     if(dodgeWin<=0){                                  // window closed without a dodge → take the hit
       if(pikaShield>0){ pikaShield--; bossMsg='Blocked! 🛡️'; bossMsgT=1.0; Audio8.sfx('select'); }
       else {
-        hearts--; oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9;
-        if(hearts<=0){ state='over'; return; }
-        if(hearts===1 && !boss.riled) rileUp();       // last-heart comeback surge
+        pikaHP=Math.max(0, pikaHP-boss.atkDmg); oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad');
+        flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9;
+        if(pikaHP<=0){ state='over'; return; }
+        if(pikaHP<=18 && !boss.riled) rileUp();        // low-energy comeback surge
       }
     }
   } else { foeTimer-=dt; if(foeTimer<=0) foeAttack(); }
@@ -1087,9 +1112,11 @@ function drawHUD(){
     if(streak>1){ g.fillStyle=C.glow; g.fillText('🔥 '+streak+' in a row!', 22, 76); }
   }
   g.restore();
-  // hearts — bottom-left normally, but top-left in boss (move bar owns the bottom strip)
-  g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
-  let hx=22, hy=(state==='boss')?52:H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
+  // hearts — bottom-left normally, top-left in a boss fight; the duel uses energy bars instead
+  if(!(state==='boss' && bossMode==='duel')){
+    g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
+    let hx=22, hy=(state==='boss')?52:H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
+  }
 
   // lane hint arrow on creature's active lane
   if(state==='play'){
@@ -1246,6 +1273,24 @@ function drawAsh(){
   g.imageSmoothingEnabled=true; g.drawImage(im, ASH_X-w/2, FLOOR_Y+6+bob-ASH_H, w, ASH_H);
   g.restore();
 }
+// a labelled energy bar; turns red when critical (≤10%). right=true anchors the fill to the right.
+function drawEnergyBar(x,y,w,label,hp,colA,colB,right){
+  const frac=Math.max(0,Math.min(1,hp/100)), crit=hp<=10;
+  g.save();
+  g.fillStyle='rgba(20,14,36,.82)'; rr(x-4,y-4,w+8,26,8); g.fill();
+  g.fillStyle='rgba(0,0,0,.5)'; rr(x,y,w,18,6); g.fill();
+  const bw=Math.max(0,w*frac), bx=right?x+w-bw:x;
+  const grd=g.createLinearGradient(x,0,x+w,0);
+  grd.addColorStop(0, crit?'#ff6a6a':colA); grd.addColorStop(1, crit?'#ff2a2a':colB);
+  g.fillStyle=grd; if(bw>0){ rr(bx,y,bw,18,6); g.fill(); }
+  g.font='700 12px Fredoka, sans-serif'; g.textBaseline='middle'; g.fillStyle='#fff';
+  g.textAlign=right?'right':'left'; g.fillText(label, right?x+w-6:x+6, y+9);
+  g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
+}
+function drawDuelBars(){
+  drawEnergyBar(16, 60, 300, 'PIKACHU', pikaHP, '#ffe14a', '#caa400', false);
+  drawEnergyBar(W-316, 60, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
+}
 function drawDuel(){
   drawLairBack();
   drawBossSprite();
@@ -1253,11 +1298,15 @@ function drawDuel(){
   if(dodgeWin>0) drawDodgeWave();
   drawZaps();
   drawAsh();                // trainer on the bank
+  if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=28+p*30;   // charging glow on a special
+    g.save(); g.globalAlpha=0.5*p; const gx=g.createRadialGradient(PLAYER_X+pikaDX,player.y-6,4,PLAYER_X+pikaDX,player.y-6,gr);
+    gx.addColorStop(0,'#fff7b0'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
+    g.beginPath(); g.arc(PLAYER_X+pikaDX,player.y-6,gr,0,7); g.fill(); g.restore(); }
   if(pikaShield>0) drawShield(PLAYER_X+pikaDX, player.y);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, player.y)){}    // tumbling roll-dodge
   else drawCreature(PLAYER_X+pikaDX, player.y, player.mood, true);   // crouched stance (offset while rolling)
-  drawBossHUD();
+  drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
   // controls: dodge arrows during a wind-up, move buttons otherwise
   if(bossPhase==='battle'){ if(dodgeWin>0) drawDodgeButtons(); else drawMoveBar(); }
   drawHUD();
@@ -1453,13 +1502,12 @@ function drawChargeGauge(x,y){
 }
 function drawMoveBar(){
   g.save();
-  drawChargeGauge(14, H-54);
-  const eqm=curMove();                                   // equipped move readout (right)
-  g.textAlign='right'; g.textBaseline='middle'; g.font='700 14px Fredoka, sans-serif';
-  g.fillStyle=eqm.col; g.fillText(eqm.name, W-14, H-54);
+  const duel = bossMode==='duel';
+  if(!duel) drawChargeGauge(14, H-54);                  // duel uses energy bars, not the charge meter
   for(const r of moveBarRects()){
-    const m=r.m, sel=(m.key===equipped), aff=canCast(m), cx=r.cx, cy=r.cy, rad=r.rad;
-    g.globalAlpha = aff?1:0.4;
+    const m=r.m, sel=(m.key===equipped), cx=r.cx, cy=r.cy, rad=r.rad;
+    const aff = duel ? !(castCD>0||pikaCast) : canCast(m);   // duel: dimmed only while on cooldown / winding up
+    g.globalAlpha = aff?1:0.45;
     // base disc
     g.beginPath(); g.arc(cx,cy,rad,0,7); g.fillStyle=sel?'rgba(48,32,72,.98)':'rgba(24,16,40,.9)'; g.fill();
     // move image, fitted inside the circle
@@ -1470,11 +1518,14 @@ function drawMoveBar(){
       g.imageSmoothingEnabled=true; g.drawImage(im, cx-iw/2, cy-ih/2, iw, ih);
       g.restore();
     }
-    // cost badge along the bottom of the disc
+    // badge along the bottom: speed/type in a duel, charge cost otherwise
     g.font='700 13px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    const badge=m.cost>0?('⚡'+m.cost):'FREE', bw=g.measureText(badge).width+14;
+    const basic = m.kind==='basic';
+    const badge = duel ? (basic?'FAST':'POWER') : (m.cost>0?('⚡'+m.cost):'FREE');
+    const bw=g.measureText(badge).width+14;
     g.fillStyle='rgba(0,0,0,.62)'; rr(cx-bw/2, cy+rad-15, bw, 19, 9); g.fill();
-    g.fillStyle=m.cost>0?'#ffe14a':'#9af0c6'; g.fillText(badge, cx, cy+rad-5);
+    g.fillStyle= duel ? (basic?'#9af0c6':'#ffd23a') : (m.cost>0?'#ffe14a':'#9af0c6');
+    g.fillText(badge, cx, cy+rad-5);
     // ring (selected glows)
     g.lineWidth=sel?5:3; g.strokeStyle=sel?m.col:'rgba(255,255,255,.30)';
     if(sel){ g.shadowColor=m.col; g.shadowBlur=14; }
