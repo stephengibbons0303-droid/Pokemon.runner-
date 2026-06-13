@@ -81,6 +81,18 @@ const Audio8 = (()=> {
   let ctx=null, master=null, started=false, muted=false, timer=null, step=0;const bgm = new Audio('music.mp3');   // file sitting next to the .html
 bgm.loop = true; bgm.volume = 0.5;
 const cheer = new Audio('levelup.mp3'); cheer.volume = 0.85;   // end-of-level celebration
+const fast = new Audio('music2.mp3'); fast.loop = true; fast.volume = 0;   // speed-run track
+let speedOn=false, fadeT=null; const NORM_VOL=0.5, FAST_VOL=0.6;
+function crossfade(toFast){
+  if(fadeT) clearInterval(fadeT);
+  const up = toFast?fast:bgm, dn = toFast?bgm:fast;
+  if(!muted){ up.play().catch(()=>{}); }
+  fadeT=setInterval(()=>{
+    up.volume=Math.min(toFast?FAST_VOL:NORM_VOL, up.volume+0.05);
+    dn.volume=Math.max(0, dn.volume-0.05);
+    if(dn.volume<=0.001){ dn.pause(); clearInterval(fadeT); fadeT=null; }
+  },45);
+}
   // bouncy A-minor-ish loop (original): bass, arp, soft hat
   const bass = [57,57,55,52, 53,53,50,48];                 // MIDI
   const arp  = [72,76,79,76, 71,74,77,74, 69,72,76,72, 65,69,72,69];
@@ -115,9 +127,11 @@ const cheer = new Audio('levelup.mp3'); cheer.volume = 0.85;   // end-of-level c
     step++;
   }
   return {
-    toggle(){ muted=!muted; if(muted) bgm.pause(); else if(started) bgm.play().catch(()=>{}); return muted; },
+    toggle(){ muted=!muted; if(muted){ bgm.pause(); fast.pause(); } else if(started){ (speedOn?fast:bgm).play().catch(()=>{}); } return muted; },
     isMuted(){return muted;},
     startMusic(){ ensure(); if(started) return; started=true; if(!muted) bgm.play().catch(()=>{}); },
+    setSpeed(on){ if(on===speedOn) return; speedOn=on; if(started) crossfade(on); },
+    isSpeed(){ return speedOn; },
     cheer(){ if(muted) return; try{ cheer.currentTime=0; cheer.play().catch(()=>{}); }catch(e){} },
     sfx(kind){
       ensure(); if(!ctx||muted) return; if(ctx.state==='suspended')ctx.resume();
@@ -180,8 +194,19 @@ let confetti=[];
 let bgScroll=0, hills=0;
 let flash={a:0,col:'#fff'};
 let lastT=performance.now();
+let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
+const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 
-function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; }
+function setSpeedMode(on){
+  if(on===speedMode) return;
+  speedMode=on; Audio8.setSpeed(on);
+  if(on){
+    speedAnnounce=1.6; flash={a:0.5,col:'#ffe08a'};
+    for(let i=0;i<40;i++) confetti.push({x:PLAYER_X+10,y:player.y,vx:(Math.random()-0.2)*420,vy:-Math.random()*360-60,life:1.2,r:4+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*14,c:pick([C.glow,C.coral,C.spark,'#fff'])});
+  }
+}
+
+function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play';
@@ -273,9 +298,12 @@ function update(dt){
   trail=trail.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; return p.life>0; });
   confetti=confetti.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.rot+=p.vr*dt; return p.life>0 && p.y<H+40; });
   if(flash.a>0) flash.a=Math.max(0,flash.a-dt*1.6);
+  if(speedAnnounce>0) speedAnnounce-=dt;
+  if(speedMode) speedLines=(speedLines+dt*1600)%W; else speedLines=0;
+  const speedMul=speedMode?1.7:1;        // gates rush in during a hot streak
 
   if(state==='play' && gate){
-    gate.x -= speed*dt;
+    gate.x -= speed*speedMul*dt;
     if(!gate.locked && gate.x <= PLAYER_X){
       // lock in the answer at the creature's lane
       gate.locked=true;
@@ -284,26 +312,29 @@ function update(dt){
       gate.resolveT=0.9;
       player.targetY=LANE_Y[0];      // gate's passed — fall back to the ground
       if(gate.result){
-        score+=10+streak*2; streak++; player.mood='happy'; player.moodT=0.7;
+        score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
         Audio8.sfx('good'); flash={a:0.35,col:'#bff7d8'};
         for(let i=0;i<18;i++) confetti.push({x:PLAYER_X+10,y:player.y,vx:(Math.random()-0.3)*260,vy:-Math.random()*320-60,life:1.1,r:4+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*12,c:pick([C.glow,C.coral,C.mint,C.spark])});
+        if(streak>=SPEED_STREAK) setSpeedMode(true);    // hot streak → SPEED RUN!
       } else {
         streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
         Audio8.sfx('bad'); flash={a:0.4,col:'#ffb3b8'};
+        setSpeedMode(false);                            // a miss ends the speed run
       }
       state='resolve';
     }
   }
 
   if(state==='resolve' && gate){
-    gate.x -= speed*0.4*dt;
+    gate.x -= speed*0.4*speedMul*dt;
     gate.resolveT-=dt;
     if(gate.resolveT<=0){
-      if(hearts<=0){ Audio8.sfx('bad'); state='over'; return; }
+      if(hearts<=0){ Audio8.sfx('bad'); setSpeedMode(false); state='over'; return; }
       stepInLvl++;
       const L=LEVELS[levelIdx];
       if(stepInLvl>=L.count){
         prizes.push(levelIdx);
+        setSpeedMode(false);            // wind down the speed run between levels
         Audio8.sfx('win'); Audio8.cheer();
         for(let i=0;i<60;i++) confetti.push({x:W/2,y:H/2,vx:(Math.random()-0.5)*520,vy:-Math.random()*420-80,life:1.6,r:4+Math.random()*5,rot:Math.random()*6,vr:(Math.random()-0.5)*14,c:pick([C.glow,C.coral,C.mint,C.spark,'#fff'])});
         state = (levelIdx>=LEVELS.length-1)?'won':'levelup';
@@ -537,6 +568,7 @@ function drawOver(){
    ============================================================ */
 function render(){
   drawBackground();
+  if(speedMode) drawSpeedLines();
   drawParticles();
 
   if(state==='menu'){ drawMenu(); drawMuteOnly(); return; }
@@ -560,9 +592,31 @@ function render(){
   }
   drawCreature(PLAYER_X, player.y, player.mood);
   drawHUD();
+  if(speedAnnounce>0) drawSpeedBanner();
 
   // hit/miss flash
   if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
+}
+
+/* speed-run visuals: golden motion streaks + a burst banner */
+function drawSpeedLines(){
+  g.save(); g.strokeStyle=C.glow; g.lineWidth=3; g.lineCap='round';
+  for(let i=0;i<16;i++){
+    const y=(i*47+13)%H, len=70+(i*37)%130;
+    const x=W+120-((speedLines+i*131)%(W+240));
+    g.globalAlpha=0.10+0.10*(i%3);
+    g.beginPath(); g.moveTo(x,y); g.lineTo(x+len,y); g.stroke();
+  }
+  g.restore();
+}
+function drawSpeedBanner(){
+  const a=Math.min(1,speedAnnounce/0.45);
+  const sc=1+(1.6-Math.max(0,speedAnnounce))*0.12;
+  g.save(); g.globalAlpha=a; g.textAlign='center';
+  g.font='700 '+Math.round(50*sc)+'px Fredoka, sans-serif';
+  g.fillStyle=C.ink;   g.fillText('⚡ SPEED RUN! ⚡', W/2+3, 150+3);
+  g.fillStyle=C.glow;  g.fillText('⚡ SPEED RUN! ⚡', W/2, 150);
+  g.restore(); g.textAlign='left';
 }
 function drawMuteOnly(){
   g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12); g.fill();
