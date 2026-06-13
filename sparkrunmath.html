@@ -123,6 +123,7 @@ const bossImgs={};                                // lazy sprite cache, keyed by
 // from the borders through any low-alpha pixels and knock them fully clear — this
 // erases the halo while leaving the solid sprite (and its interior dark parts,
 // e.g. Lucario's black, which keep full alpha) untouched.
+const DARKBG=new Set(['gyarados.png']);   // sprites whose source art bakes in a dark background disc
 function cleanSprite(o){
   try{
     const im=o.img, w=im.width, h=im.height;
@@ -130,7 +131,11 @@ function cleanSprite(o){
     const c=document.createElement('canvas'); c.width=w; c.height=h;
     const cx=c.getContext('2d'); cx.drawImage(im,0,0);
     const id=cx.getImageData(0,0,w,h), d=id.data, CUT=180, seen=new Uint8Array(w*h), stack=[];
-    const push=(x,y)=>{ if(x<0||y<0||x>=w||y>=h) return; const i=y*w+x; if(seen[i]||d[i*4+3]>=CUT) return; seen[i]=1; stack.push(i); };
+    const dark=DARKBG.has(o.file);
+    // background = transparent/fringe; for DARKBG sprites also the connected near-black matte
+    const isBg=i=>{ const a=d[i*4+3]; if(a<CUT) return true; if(!dark) return false;
+      return (0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]) < 60; };
+    const push=(x,y)=>{ if(x<0||y<0||x>=w||y>=h) return; const i=y*w+x; if(seen[i]||!isBg(i)) return; seen[i]=1; stack.push(i); };
     for(let x=0;x<w;x++){ push(x,0); push(x,h-1); }
     for(let y=0;y<h;y++){ push(0,y); push(w-1,y); }
     while(stack.length){ const i=stack.pop(); d[i*4+3]=0; const x=i%w, y=(i/w)|0; push(x+1,y); push(x-1,y); push(x,y+1); push(x,y-1); }
@@ -139,7 +144,7 @@ function cleanSprite(o){
 }
 function bossSprite(file){
   if(!file) return null;
-  if(!bossImgs[file]){ const o={img:new Image(),ready:false,cnv:null}; o.img.onload=()=>{ cleanSprite(o); o.ready=true; }; o.img.src=file; bossImgs[file]=o; }
+  if(!bossImgs[file]){ const o={img:new Image(),ready:false,cnv:null,file}; o.img.onload=()=>{ cleanSprite(o); o.ready=true; }; o.img.src=file; bossImgs[file]=o; }
   return bossImgs[file];
 }
 // the drawable for a sprite: the cleaned canvas if we have it, else the raw image
@@ -449,7 +454,7 @@ function enterBoss(){
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
   if(bossMode==='duel'){
-    bossPhase='intro'; dlg=cfg.lines||[]; dlgIdx=0; foeTimer=2.6; dodgeWin=0; castCD=0;
+    bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0;
     bossMsg=''; bossMsgT=0; if(cfg.roar) voice(cfg.roar);   // a wild roar greets you
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
@@ -457,12 +462,10 @@ function enterBoss(){
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
 const PIKA_VOICE='pika_voice.mp3', PIKA_THUNDER='pika_thunder.mp3', PIKA_CRY='pika_cry.mp3';
-function advanceDialogue(){
-  dlgIdx++;
-  if(dlgIdx>=dlg.length){ bossPhase='battle'; foeTimer=2.4; bossMsg='Battle!'; bossMsgT=1.0; voice(PIKA_CRY,0.9); return; }  // Pikachu battle cry
-  const ln=dlg[dlgIdx];
-  if(ln && ln.who==='gyara'){ if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7); }
-  else if(ln && ln.who==='pika'){ voice(PIKA_VOICE,0.85); }
+// intro is just a beat to size up the foe (room here later for Ash coaching) — then tap to battle
+function duelBegin(){
+  if(bossPhase!=='intro') return;
+  bossPhase='battle'; foeTimer=2.4; bossMsg='Battle!'; bossMsgT=1.0; voice(PIKA_CRY,0.9);   // Pikachu battle cry
 }
 function castMove(m){
   if(castCD>0) return;
@@ -575,7 +578,7 @@ function onPress(e){
   if(inGameplay() && pointInRect(PAUSE,p.x,p.y)){ setPaused(!paused); return; }   // pause / unpause
   if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
   if(state==='boss' && bossMode==='duel'){             // lair duel input
-    if(bossPhase==='intro'){ advanceDialogue(); return; }       // tap = advance chat
+    if(bossPhase==='intro'){ duelBegin(); return; }             // tap = start the battle
     if(dodgeWin>0){ doDodge(); return; }                        // tap anywhere = dodge the strike
     for(const r of moveBarRects()){                             // tap a move = cast it at the boss
       if(pointInRect(r,p.x,p.y)){ castMove(r.m); return; }
@@ -598,7 +601,7 @@ cv.addEventListener('touchstart',onPress,{passive:false});
 window.addEventListener('keydown',e=>{
   if(e.code==='KeyP'||e.code==='Escape'){ if(inGameplay()){ e.preventDefault(); setPaused(!paused); } return; }
   if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(paused) return;
-    if(state==='boss' && bossMode==='duel'){ if(bossPhase==='intro') advanceDialogue(); else if(dodgeWin>0) doDodge(); return; }
+    if(state==='boss' && bossMode==='duel'){ if(bossPhase==='intro') duelBegin(); else if(dodgeWin>0) doDodge(); return; }
     hop(); }
 });
 
@@ -878,12 +881,13 @@ function drawBackground(){
 }
 
 /* the mascot: Pikachu run / jump sprite (with a soft spark glow) */
-function drawCreature(x,y,mood){
+function drawCreature(x,y,mood,stance){
   const airborne = player.air;
-  const bob = airborne ? 0 : Math.sin(player.bob)*3;     // no run-bob mid-jump
+  const useStance = !!stance && !airborne && jump.ready;       // crouched pre-battle pose (jump sheet frame 0)
+  const bob = airborne ? 0 : (useStance ? Math.sin(player.bob*0.6)*1.5 : Math.sin(player.bob)*3);  // gentle idle vs run-bob
   if(mood==='oops') x += Math.sin(player.moodT*40)*6;    // dazed side-to-side wobble on a wrong answer
-  const sheet = (airborne && jump.ready) ? jump : pika;
-  const frameIdx = (sheet===jump) ? player.jumpFrame : player.frame;
+  const sheet = (airborne||useStance) && jump.ready ? jump : pika;
+  const frameIdx = airborne ? player.jumpFrame : (useStance ? 0 : player.frame);
   const H0 = (sheet===jump) ? JUMP_H : PIKA_H;
   const s=H0/sheet.ch, dw=sheet.cw*s, dh=H0;
   const feetY=y+28+bob;            // baseline the feet rest on
@@ -1123,20 +1127,16 @@ function drawDodgeWave(){
   g.lineTo(x-60,FLOOR_Y); g.closePath(); g.fill(); g.stroke();
   g.restore();
 }
-function drawDialogue(){
-  const ln=dlg&&dlg[dlgIdx]; if(!ln) return;
-  const bx=70, bw=W-140, by=H-156, bh=116, foe=(ln.who==='gyara');
-  g.save();
-  g.fillStyle='rgba(16,12,32,.93)'; rr(bx,by,bw,bh,16); g.fill();
-  g.strokeStyle=foe?'#5fb0e6':'#ffe14a'; g.lineWidth=3; rr(bx,by,bw,bh,16); g.stroke();
-  g.textAlign='left'; g.textBaseline='top';
-  g.fillStyle=foe?'#9fe0ff':'#ffe14a'; g.font='700 22px Fredoka, sans-serif';
-  g.fillText(foe?(boss.cfg.name||'GYARADOS').toUpperCase():'PIKACHU', bx+24, by+16);
-  g.fillStyle=C.cream; g.font='600 27px Fredoka, sans-serif';
-  g.fillText(ln.txt, bx+24, by+52);
-  g.fillStyle='rgba(255,244,230,.65)'; g.font='600 16px Fredoka, sans-serif'; g.textAlign='right';
-  g.fillText('tap ▶', bx+bw-20, by+bh-28);
-  g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
+// intro beat: a top banner over the lair (kept clear of Pikachu) — Ash coaching will live here later
+function drawDuelIntro(){
+  g.save(); g.textAlign='center';
+  g.font='700 40px Fredoka, sans-serif';
+  g.fillStyle=C.ink;  g.fillText('A wild '+boss.cfg.name+' appeared!', W/2+2, 120+2);
+  g.fillStyle=C.glow; g.fillText('A wild '+boss.cfg.name+' appeared!', W/2, 120);
+  const a=0.5+0.5*Math.sin(performance.now()/130);
+  g.globalAlpha=a; g.font='700 26px Fredoka, sans-serif'; g.fillStyle=C.cream;
+  g.fillText('Tap to battle!', W/2, 166);
+  g.restore(); g.textAlign='left';
 }
 function drawDodgePrompt(){
   const a=0.55+0.45*Math.sin(performance.now()/90);
@@ -1155,12 +1155,12 @@ function drawDuel(){
   drawZaps();
   if(pikaShield>0) drawShield(PLAYER_X, player.y);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
-  else drawCreature(PLAYER_X, player.y, player.mood);
+  else drawCreature(PLAYER_X, player.y, player.mood, true);   // crouched battle stance (not running)
   drawBossHUD();
-  if(bossPhase==='battle') drawMoveBar();        // moves appear once the chat is over
+  if(bossPhase==='battle') drawMoveBar();        // moves appear once the intro beat is over
   drawHUD();
   if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
-  if(bossPhase==='intro') drawDialogue();
+  if(bossPhase==='intro') drawDuelIntro();
   else if(dodgeWin>0) drawDodgePrompt();
   else if(bossMsgT>0) drawBossMsg();
 }
