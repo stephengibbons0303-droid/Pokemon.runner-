@@ -184,12 +184,12 @@ const MAX_CHARGE = 6;
 const PIKA_MOVES = [
   { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
   { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
-  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:1, blurb:'Big hit' },
-  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:2, blurb:'Blocks 1 hit' },
-  { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:3, blurb:'Heavy slam' },
-  { key:'cm', name:'Charm',        file:'pika_charm.png',       dmg:0, cost:0, gain:2, col:'#ff9ed6', unlock:4, blurb:'+2 charge' },
-  { key:'rf', name:'Reflect',      file:'pika_reflect.png',     dmg:0, cost:1, gain:0, shield:2, col:'#b9a6ff', unlock:5, blurb:'Blocks 2 hits' },
-  { key:'gx', name:'G-Max Volt Crash', file:'pika_gmax.png',    dmg:8, cost:5, gain:0, col:'#ff5a3c', unlock:6, blurb:'ULTIMATE' },
+  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit' },
+  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit' },
+  { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:2, blurb:'Heavy slam' },
+  { key:'cm', name:'Charm',        file:'pika_charm.png',       dmg:0, cost:0, gain:2, col:'#ff9ed6', unlock:3, blurb:'+2 charge' },
+  { key:'rf', name:'Reflect',      file:'pika_reflect.png',     dmg:0, cost:1, gain:0, shield:2, col:'#b9a6ff', unlock:4, blurb:'Blocks 2 hits' },
+  { key:'gx', name:'G-Max Volt Crash', file:'pika_gmax.png',    dmg:8, cost:5, gain:0, col:'#ff5a3c', unlock:5, blurb:'ULTIMATE' },
 ];
 function availMoves(){ return PIKA_MOVES.filter(m=>m.unlock<=levelIdx); }
 function curMove(){ return PIKA_MOVES.find(m=>m.key===equipped) || PIKA_MOVES[1]; }
@@ -456,23 +456,26 @@ function enterBoss(){
   }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
+const PIKA_VOICE='pika_voice.mp3', PIKA_THUNDER='pika_thunder.mp3', PIKA_CRY='pika_cry.mp3';
 function advanceDialogue(){
   dlgIdx++;
-  if(dlgIdx>=dlg.length){ bossPhase='battle'; foeTimer=2.4; bossMsg='Battle!'; bossMsgT=1.0; return; }
+  if(dlgIdx>=dlg.length){ bossPhase='battle'; foeTimer=2.4; bossMsg='Battle!'; bossMsgT=1.0; voice(PIKA_CRY,0.9); return; }  // Pikachu battle cry
   const ln=dlg[dlgIdx];
-  if(ln && ln.who==='gyara' && boss.cfg.roar2) voice(boss.cfg.roar2,0.7);
+  if(ln && ln.who==='gyara'){ if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7); }
+  else if(ln && ln.who==='pika'){ voice(PIKA_VOICE,0.85); }
 }
 function castMove(m){
   if(castCD>0) return;
   if(!canCast(m)){ Audio8.sfx('bad'); return; }
   equipped=m.key;
   charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
-  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; if(boss.cfg.cry) voice(boss.cfg.cry,0.55); }
+  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; voice(PIKA_THUNDER,0.8); }   // Pikachu attack voice
+  else voice(PIKA_VOICE,0.8);                                              // setup move (charm/reflect)
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   pikaFire(m); Audio8.sfx('good'); flash={a:0.35,col:m.col};
   player.mood='happy'; player.moodT=0.5; castCD=0.5;
   bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
-  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.roar) voice(boss.cfg.roar); }
+  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9); }   // foe faints
 }
 function foeAttack(){
   boss.atk=0.6; flash={a:0.4,col:'#9fd8ff'};
