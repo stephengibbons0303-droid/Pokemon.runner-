@@ -338,7 +338,7 @@ let trail=[];              // sparkle particles
 let confetti=[];
 let rings=[];              // expanding shockwave rings (correct-answer pop)
 let stars=[];              // bursting star sparkles
-let bgScroll=0, hills=0;
+let world=0;               // master scroll distance (px); every parallax layer derives its offset from this
 let flash={a:0,col:'#fff'};
 let lastT=performance.now();
 let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
@@ -492,8 +492,10 @@ window.addEventListener('keydown',e=>{ if(e.code==='Space'||e.code==='ArrowUp'){
    UPDATE
    ============================================================ */
 function update(dt){
-  bgScroll=(bgScroll+ dt*(state==='play'?70:24))%160;
-  hills=(hills+dt*14)%W;
+  // master world scroll — drives every parallax layer. Faster in play, faster still in a speed run.
+  const runState=(state==='play'||state==='resolve'||state==='boss');
+  const worldSpd = runState ? (speedMode?188:96) : 34;
+  world += dt*worldSpd;
   player.bob+=dt*4;
   // advance the run-cycle frame (faster while actually running)
   const running = (state==='play'||state==='resolve'||state==='levelup'||state==='menu'||state==='boss');
@@ -623,29 +625,64 @@ function update(dt){
    ============================================================ */
 function rr(x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
 
+// a seamless ridge silhouette built from summed sines (periodic -> no seam as it scrolls)
+function drawRidge(off, base, amp, col){
+  g.fillStyle=col; g.beginPath(); g.moveTo(0,H);
+  for(let x=0;x<=W;x+=10){ const t=x+off;
+    const y=base + Math.sin(t/150)*amp*0.6 + Math.sin(t/53+1.7)*amp*0.4;
+    g.lineTo(x,y); }
+  g.lineTo(W,H); g.closePath(); g.fill();
+}
+// soft drifting cloud/mist blobs that wrap around the screen width
+function drawClouds(off){
+  const pad=300, span=W+pad, blobs=[[120,92,46],[430,150,62],[700,84,52],[940,168,44],[1180,120,40]];
+  g.save(); g.fillStyle='rgba(255,255,255,0.055)';
+  for(const [bx,by,r] of blobs){
+    const x=((bx-off)%span+span)%span-pad/2;
+    g.beginPath(); g.ellipse(x,by,r*1.7,r,0,0,7); g.fill();
+    g.beginPath(); g.ellipse(x+r*0.9,by+8,r*1.1,r*0.7,0,0,7); g.fill();
+  }
+  g.restore();
+}
+// nearest layer: little grass tufts on the ground line (still behind Pikachu)
+function drawTufts(off){
+  const period=120, n=Math.ceil(W/period)+2;
+  g.save(); g.strokeStyle=C.leafDk; g.lineWidth=3; g.lineCap='round';
+  for(let k=-1;k<n;k++){
+    const x=k*period - (((off%period)+period)%period);
+    for(let b=-1;b<=1;b++){ g.beginPath(); g.moveTo(x+b*6,FLOOR_Y+9); g.quadraticCurveTo(x+b*8,FLOOR_Y-3,x+b*10,FLOOR_Y-15); g.stroke(); }
+  }
+  g.restore();
+}
+
 function drawBackground(){
-  // sky gradient
+  // --- layer 0: sky gradient (static) ---
   const sky=g.createLinearGradient(0,0,0,FLOOR_Y);
   sky.addColorStop(0,C.skyTop); sky.addColorStop(.55,C.skyMid); sky.addColorStop(1,C.skyLow);
   g.fillStyle=sky; g.fillRect(0,0,W,H);
-  // sun
+  // --- layer 1: sun (static glow) ---
   g.save(); g.globalAlpha=.9;
   const sun=g.createRadialGradient(770,120,8,770,120,90);
   sun.addColorStop(0,'#fff6d8'); sun.addColorStop(.5,C.sun); sun.addColorStop(1,'rgba(255,180,120,0)');
   g.fillStyle=sun; g.beginPath(); g.arc(770,120,90,0,7); g.fill(); g.restore();
-  // stars
-  g.fillStyle='rgba(255,255,255,.5)';
-  for(let i=0;i<26;i++){ const x=(i*97+13)%W, y=(i*53)%200; g.globalAlpha=.3+0.5*Math.abs(Math.sin(i+bgScroll*0.04)); g.fillRect(x,y,2,2);} g.globalAlpha=1;
-  // rolling hills (parallax)
-  const drawHill=(off,base,col,amp)=>{ g.fillStyle=col; g.beginPath(); g.moveTo(0,FLOOR_Y);
-    for(let x=0;x<=W;x+=20){ const y=base + Math.sin((x+off)/120)*amp; g.lineTo(x,y);} g.lineTo(W,FLOOR_Y); g.closePath(); g.fill(); };
-  drawHill(hills*0.4, 360, '#6f4a9c', 26);
-  drawHill(hills*0.8+90, 400, '#8a5aa6', 22);
-  // ground
+  // --- layer 2: stars (very slow drift + twinkle) ---
+  const so=world*0.05; g.fillStyle='#fff';
+  for(let i=0;i<42;i++){ const x=(((i*97+13)-so)%W+W)%W, y=(i*53)%212;
+    g.globalAlpha=.22+0.5*Math.abs(Math.sin(i*1.3+world*0.012)); const s=(i%5===0)?2.5:1.5; g.fillRect(x,y,s,s); }
+  g.globalAlpha=1;
+  // --- layer 3: clouds/mist (slow) ---
+  drawClouds(world*0.12);
+  // --- layers 4-6: ridges, far (slow) to near (fast) ---
+  drawRidge(world*0.20, 372, 64, '#553594');   // far range
+  drawRidge(world*0.42, 410, 44, '#6f4a9c');   // mid hills
+  drawRidge(world*0.72, 448, 28, '#8a5aa6');   // near hills
+  // --- layer 7: ground (static band) + scrolling chevron texture ---
   g.fillStyle=C.leaf; g.fillRect(0,FLOOR_Y,W,H-FLOOR_Y);
   g.fillStyle=C.leafDk;
-  for(let x=-((bgScroll)%80); x<W; x+=80){ g.beginPath(); g.moveTo(x,FLOOR_Y); g.lineTo(x+18,FLOOR_Y); g.lineTo(x+9,FLOOR_Y-12); g.closePath(); g.fill(); }
+  for(let x=-(world%80); x<W; x+=80){ g.beginPath(); g.moveTo(x,FLOOR_Y); g.lineTo(x+18,FLOOR_Y); g.lineTo(x+9,FLOOR_Y-12); g.closePath(); g.fill(); }
   g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(0,FLOOR_Y,W,4);
+  // --- layer 8: foreground grass tufts (fastest, nearest) ---
+  drawTufts(world*1.15);
 }
 
 /* the mascot: Pikachu run / jump sprite (with a soft spark glow) */
