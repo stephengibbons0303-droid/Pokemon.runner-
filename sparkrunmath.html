@@ -625,64 +625,139 @@ function update(dt){
    ============================================================ */
 function rr(x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
 
-// a seamless ridge silhouette built from summed sines (periodic -> no seam as it scrolls)
-function drawRidge(off, base, amp, col){
+/* ============================================================
+   SCENERY — each level gets its own parallax world. A scene is
+   pure data: sky stops, a sun/moon orb, star + cloud settings,
+   a stack of ridge layers (each with its own parallax factor),
+   ground colours and an optional motif (snow caps / bubbles /
+   crystals). drawBackground() just renders the active scene.
+   ============================================================ */
+const SCENES = [
+  { // L1 Bloom Meadow — bright day, green hills, snow-capped mountains
+    sky:['#4fb0e8','#9ad6ef','#d9f0dd'], orb:{x:150,y:104,r:74,col:'#fffdf0'},
+    stars:0, cloud:'rgba(255,255,255,0.9)',
+    ridges:[ {kind:'peaks',f:0.16,base:372,h:130,span:250,col:'#7e93c6',snow:true},
+             {kind:'peaks',f:0.28,base:392,h:86, span:210,col:'#94a7d2'},
+             {kind:'hill', f:0.50,base:438,amp:34,col:'#5cb85a'},
+             {kind:'hill', f:0.78,base:460,amp:24,col:'#46a64e'} ],
+    ground:'#54bd57', groundDk:'#39994a', tuft:'#2f8a40' },
+  { // L2 Orchard Hop — warm late-afternoon orchard hills
+    sky:['#7fc6e8','#cfe8cf','#ffe1a6'], orb:{x:792,y:150,r:82,col:'#fff2c4'},
+    stars:0, cloud:'rgba(255,242,224,0.82)',
+    ridges:[ {kind:'hill',f:0.20,base:398,amp:42,col:'#9bb277'},
+             {kind:'hill',f:0.46,base:438,amp:30,col:'#7aa84f'},
+             {kind:'hill',f:0.74,base:462,amp:22,col:'#5e8f3a'} ],
+    ground:'#7bb04a', groundDk:'#5a8a34', tuft:'#4c7a2c' },
+  { // L3 Bubble Bay — sunny seaside, sandy beach, rising bubbles
+    sky:['#2aa6cf','#7fd6e2','#cdf2ec'], orb:{x:776,y:108,r:70,col:'#fffbe6'},
+    stars:0, cloud:'rgba(255,255,255,0.82)',
+    ridges:[ {kind:'hill',f:0.18,base:388,amp:22,col:'#3fb7c9'},
+             {kind:'hill',f:0.44,base:420,amp:18,col:'#59c8d2'},
+             {kind:'hill',f:0.72,base:446,amp:14,col:'#82dde0'} ],
+    ground:'#ecd79a', groundDk:'#cdb36a', tuft:null, bubbles:true },
+  { // L4 Crystal Caves — dark cavern with glowing crystals
+    sky:['#150f2c','#241841','#34245a'], orb:null,
+    stars:0.5, cloud:null,
+    ridges:[ {kind:'hill',f:0.16,base:360,amp:50,col:'#241a3e'},
+             {kind:'hill',f:0.42,base:410,amp:40,col:'#2f2350'},
+             {kind:'hill',f:0.72,base:452,amp:28,col:'#3b2c64'} ],
+    ground:'#241a3a', groundDk:'#3a2a5e', tuft:null, crystals:true },
+  { // L5 Star Summit — starry dusk peaks (the original mood)
+    sky:['#2b1a4a','#5b3a8c','#c8688f'], orb:{x:780,y:116,r:62,col:'#f2e9d8'},
+    stars:1, cloud:'rgba(220,210,240,0.10)',
+    ridges:[ {kind:'peaks',f:0.18,base:360,h:120,span:260,col:'#3c2a66',snow:true},
+             {kind:'hill', f:0.44,base:420,amp:40,col:'#5a3f86'},
+             {kind:'hill', f:0.72,base:456,amp:26,col:'#74539a'} ],
+    ground:'#3a8a6a', groundDk:'#2c6e54', tuft:'#235a44' },
+];
+function scene(){ return SCENES[Math.min(levelIdx, SCENES.length-1)]; }
+
+// seamless rolling hill (summed sines are periodic -> no seam as it scrolls)
+function drawHill(off, base, amp, col){
   g.fillStyle=col; g.beginPath(); g.moveTo(0,H);
-  for(let x=0;x<=W;x+=10){ const t=x+off;
-    const y=base + Math.sin(t/150)*amp*0.6 + Math.sin(t/53+1.7)*amp*0.4;
-    g.lineTo(x,y); }
+  for(let x=0;x<=W;x+=10){ const t=x+off; g.lineTo(x, base + Math.sin(t/150)*amp*0.6 + Math.sin(t/53+1.7)*amp*0.4); }
   g.lineTo(W,H); g.closePath(); g.fill();
 }
-// soft drifting cloud/mist blobs that wrap around the screen width
-function drawClouds(off){
-  const pad=300, span=W+pad, blobs=[[120,92,46],[430,150,62],[700,84,52],[940,168,44],[1180,120,40]];
-  g.save(); g.fillStyle='rgba(255,255,255,0.055)';
-  for(const [bx,by,r] of blobs){
-    const x=((bx-off)%span+span)%span-pad/2;
-    g.beginPath(); g.ellipse(x,by,r*1.7,r,0,0,7); g.fill();
-    g.beginPath(); g.ellipse(x+r*0.9,by+8,r*1.1,r*0.7,0,0,7); g.fill();
-  }
+// distant mountain range: a tiled row of triangular peaks, optional snow caps
+function drawPeaks(off, base, peakH, span, col, snow){
+  const o=((off%span)+span)%span;
+  g.fillStyle=col;
+  for(let x=-o-span; x<W+span; x+=span){ const cx=x+span/2;
+    g.beginPath(); g.moveTo(x,base); g.lineTo(cx,base-peakH); g.lineTo(x+span,base); g.closePath(); g.fill(); }
+  if(snow){ g.fillStyle='rgba(255,255,255,0.92)'; const sH=peakH*0.27, half=(span/2)*(sH/peakH);
+    for(let x=-o-span; x<W+span; x+=span){ const cx=x+span/2, top=base-peakH, ly=top+sH;
+      g.beginPath(); g.moveTo(cx,top); g.lineTo(cx-half,ly); g.lineTo(cx-half*0.35,ly-4);
+      g.lineTo(cx,ly+2); g.lineTo(cx+half*0.35,ly-4); g.lineTo(cx+half,ly); g.closePath(); g.fill(); } }
+}
+// puffy drifting clouds that wrap around the screen width
+function drawClouds(off, col){
+  const pad=340, span=W+pad, blobs=[[120,88,40],[450,140,52],[760,80,46],[1060,150,40]];
+  g.save(); g.fillStyle=col;
+  for(const [bx,by,r] of blobs){ const x=((bx-off)%span+span)%span-pad/2;
+    g.beginPath(); g.arc(x,by,r,0,7); g.arc(x+r*0.95,by+6,r*0.78,0,7); g.arc(x-r*0.95,by+8,r*0.66,0,7); g.arc(x+r*0.15,by-r*0.5,r*0.58,0,7); g.fill(); }
   g.restore();
 }
 // nearest layer: little grass tufts on the ground line (still behind Pikachu)
-function drawTufts(off){
+function drawTufts(off, col){
   const period=120, n=Math.ceil(W/period)+2;
-  g.save(); g.strokeStyle=C.leafDk; g.lineWidth=3; g.lineCap='round';
-  for(let k=-1;k<n;k++){
-    const x=k*period - (((off%period)+period)%period);
-    for(let b=-1;b<=1;b++){ g.beginPath(); g.moveTo(x+b*6,FLOOR_Y+9); g.quadraticCurveTo(x+b*8,FLOOR_Y-3,x+b*10,FLOOR_Y-15); g.stroke(); }
+  g.save(); g.strokeStyle=col; g.lineWidth=3; g.lineCap='round';
+  for(let k=-1;k<n;k++){ const x=k*period - (((off%period)+period)%period);
+    for(let b=-1;b<=1;b++){ g.beginPath(); g.moveTo(x+b*6,FLOOR_Y+9); g.quadraticCurveTo(x+b*8,FLOOR_Y-3,x+b*10,FLOOR_Y-15); g.stroke(); } }
+  g.restore();
+}
+// L3 motif: bubbles rising through the lower (water) band
+function drawBubbles(){
+  g.save(); g.strokeStyle='rgba(255,255,255,0.55)'; g.fillStyle='rgba(255,255,255,0.14)'; g.lineWidth=1.5;
+  const span=FLOOR_Y-210;
+  for(let i=0;i<14;i++){ const r=4+(i%4)*3;
+    const x=(((i*83+20)-world*0.2)%W+W)%W, y=FLOOR_Y-((world*0.5+i*70)%span);
+    g.beginPath(); g.arc(x,y,r,0,7); g.fill(); g.stroke(); }
+  g.restore();
+}
+// L4 motif: glowing crystal clusters along the near ground
+function drawCrystals(off){
+  const period=250, o=((off%period)+period)%period, cols=['#7a5cff','#9b7bff','#b59cff'];
+  g.save();
+  for(let x=-o-period; x<W+period; x+=period){
+    for(let k=0;k<3;k++){ const cx=x+k*16-16, h=24+k*9, w=11;
+      g.fillStyle=cols[k%3]; g.shadowColor='#9b7bff'; g.shadowBlur=14;
+      g.beginPath(); g.moveTo(cx,FLOOR_Y-2); g.lineTo(cx-w/2,FLOOR_Y-2-h*0.5); g.lineTo(cx,FLOOR_Y-2-h); g.lineTo(cx+w/2,FLOOR_Y-2-h*0.5); g.closePath(); g.fill(); }
   }
   g.restore();
 }
 
 function drawBackground(){
-  // --- layer 0: sky gradient (static) ---
+  const sc=scene();
+  // sky gradient
   const sky=g.createLinearGradient(0,0,0,FLOOR_Y);
-  sky.addColorStop(0,C.skyTop); sky.addColorStop(.55,C.skyMid); sky.addColorStop(1,C.skyLow);
+  sky.addColorStop(0,sc.sky[0]); sky.addColorStop(.55,sc.sky[1]); sky.addColorStop(1,sc.sky[2]);
   g.fillStyle=sky; g.fillRect(0,0,W,H);
-  // --- layer 1: sun (static glow) ---
-  g.save(); g.globalAlpha=.9;
-  const sun=g.createRadialGradient(770,120,8,770,120,90);
-  sun.addColorStop(0,'#fff6d8'); sun.addColorStop(.5,C.sun); sun.addColorStop(1,'rgba(255,180,120,0)');
-  g.fillStyle=sun; g.beginPath(); g.arc(770,120,90,0,7); g.fill(); g.restore();
-  // --- layer 2: stars (very slow drift + twinkle) ---
-  const so=world*0.05; g.fillStyle='#fff';
-  for(let i=0;i<42;i++){ const x=(((i*97+13)-so)%W+W)%W, y=(i*53)%212;
-    g.globalAlpha=.22+0.5*Math.abs(Math.sin(i*1.3+world*0.012)); const s=(i%5===0)?2.5:1.5; g.fillRect(x,y,s,s); }
-  g.globalAlpha=1;
-  // --- layer 3: clouds/mist (slow) ---
-  drawClouds(world*0.12);
-  // --- layers 4-6: ridges, far (slow) to near (fast) ---
-  drawRidge(world*0.20, 372, 64, '#553594');   // far range
-  drawRidge(world*0.42, 410, 44, '#6f4a9c');   // mid hills
-  drawRidge(world*0.72, 448, 28, '#8a5aa6');   // near hills
-  // --- layer 7: ground (static band) + scrolling chevron texture ---
-  g.fillStyle=C.leaf; g.fillRect(0,FLOOR_Y,W,H-FLOOR_Y);
-  g.fillStyle=C.leafDk;
+  // sun / moon orb (static glow)
+  if(sc.orb){ const o=sc.orb; g.save(); g.globalAlpha=.95;
+    const rg=g.createRadialGradient(o.x,o.y,6,o.x,o.y,o.r);
+    rg.addColorStop(0,o.col); rg.addColorStop(.55,o.col); rg.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=rg; g.beginPath(); g.arc(o.x,o.y,o.r,0,7); g.fill(); g.restore(); }
+  // stars (very slow drift + twinkle)
+  if(sc.stars>0){ const so=world*0.05; g.fillStyle='#fff';
+    for(let i=0;i<42;i++){ const x=(((i*97+13)-so)%W+W)%W, y=(i*53)%212;
+      g.globalAlpha=sc.stars*(0.22+0.5*Math.abs(Math.sin(i*1.3+world*0.012))); const s=(i%5===0)?2.5:1.5; g.fillRect(x,y,s,s); }
+    g.globalAlpha=1; }
+  // clouds / mist
+  if(sc.cloud) drawClouds(world*0.12, sc.cloud);
+  // ridge layers, far (slow) to near (fast)
+  for(const r of sc.ridges){
+    if(r.kind==='peaks') drawPeaks(world*r.f, r.base, r.h, r.span, r.col, r.snow);
+    else drawHill(world*r.f, r.base, r.amp, r.col);
+  }
+  // ground band + scrolling chevron texture
+  g.fillStyle=sc.ground; g.fillRect(0,FLOOR_Y,W,H-FLOOR_Y);
+  g.fillStyle=sc.groundDk;
   for(let x=-(world%80); x<W; x+=80){ g.beginPath(); g.moveTo(x,FLOOR_Y); g.lineTo(x+18,FLOOR_Y); g.lineTo(x+9,FLOOR_Y-12); g.closePath(); g.fill(); }
   g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(0,FLOOR_Y,W,4);
-  // --- layer 8: foreground grass tufts (fastest, nearest) ---
-  drawTufts(world*1.15);
+  // per-scene foreground motifs (nearest, fastest)
+  if(sc.bubbles)  drawBubbles();
+  if(sc.crystals) drawCrystals(world*0.9);
+  if(sc.tuft)     drawTufts(world*1.15, sc.tuft);
 }
 
 /* the mascot: Pikachu run / jump sprite (with a soft spark glow) */
@@ -798,14 +873,16 @@ function drawHUD(){
     g.fillText(gate.q+' = ?', W/2, by+bh/2+2);
     g.restore();
   }
-  // score (top-left)
+  // score (top-left) — dark shadow keeps the light text legible on bright daytime scenes
+  g.save(); g.shadowColor='rgba(0,0,0,.55)'; g.shadowBlur=4; g.shadowOffsetY=1;
   g.fillStyle=C.cream; g.font='600 24px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
   g.fillText('⭐ '+score, 22, 22);
   g.font='600 18px Fredoka, sans-serif';
   if(state==='play'||state==='resolve'){
-    g.fillStyle='rgba(255,244,230,.85)'; g.fillText(LEVELS[levelIdx].name+'  ·  '+(stepInLvl+1)+'/'+LEVELS[levelIdx].count, 22, 52);
+    g.fillStyle='rgba(255,244,230,.9)'; g.fillText(LEVELS[levelIdx].name+'  ·  '+(stepInLvl+1)+'/'+LEVELS[levelIdx].count, 22, 52);
     if(streak>1){ g.fillStyle=C.glow; g.fillText('🔥 '+streak+' in a row!', 22, 76); }
   }
+  g.restore();
   // hearts — bottom-left normally, but top-left in boss (move bar owns the bottom strip)
   g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
   let hx=22, hy=(state==='boss')?52:H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
@@ -838,19 +915,21 @@ function panel(title,sub,btn,extra){
 
 function drawMenu(){
   g.textAlign='center';
+  // a soft dark scrim keeps the menu text readable over the bright meadow scene
+  g.save(); g.shadowColor='rgba(0,0,0,.5)'; g.shadowBlur=6; g.shadowOffsetY=2;
   // title
-  g.save(); g.font='700 84px Fredoka, sans-serif';
+  g.font='700 84px Fredoka, sans-serif';
   g.fillStyle=C.glow; g.fillText('Spark Run',W/2+3,150+3);
   g.fillStyle=C.coral; g.fillText('Spark Run',W/2,150);
-  g.restore();
   g.fillStyle=C.cream; g.font='600 26px Fredoka, sans-serif'; g.fillText('A Maths Adventure',W/2,196);
   // mascot demo
   drawCreature(W/2,300,'happy');
   // how-to
   g.font='600 22px Fredoka, sans-serif'; g.fillStyle=C.cream;
   g.fillText('Tap to JUMP to the right answer', W/2, 388);
-  g.fillStyle='rgba(255,244,230,.8)'; g.font='600 18px Fredoka, sans-serif';
+  g.fillStyle='rgba(255,244,230,.92)'; g.font='600 18px Fredoka, sans-serif';
   g.fillText('tap once = middle • double-tap = high jump', W/2, 416);
+  g.restore();
   // start button
   const bw=280,bx=W/2-bw/2,by=448,bh=60;
   g.fillStyle=C.leaf; rr(bx,by,bw,bh,22); g.fill();
