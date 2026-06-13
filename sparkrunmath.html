@@ -48,6 +48,31 @@ const cv = document.getElementById('game');
 const g  = cv.getContext('2d');
 const W = 960, H = 540;                 // fixed virtual resolution
 
+// offscreen buffers: one for isolated sprite tinting, one for the pixel-art background pass
+const tintBuf=document.createElement('canvas'); const tg=tintBuf.getContext('2d');
+const pixBuf =document.createElement('canvas'); const pxg=pixBuf.getContext('2d');
+const PIXEL=4;                          // background block size (chunky 8-bit look)
+// draw a sprite region with a red tint that sticks to the sprite's own pixels
+// (compositing in a private buffer, so it never floods the whole bounding box)
+function drawTinted(src, sx,sy,sw,sh, dx,dy,dw,dh, rgba){
+  const bw=Math.max(1,Math.ceil(dw)), bh=Math.max(1,Math.ceil(dh));
+  tintBuf.width=bw; tintBuf.height=bh;
+  tg.clearRect(0,0,bw,bh); tg.imageSmoothingEnabled=true; tg.globalCompositeOperation='source-over';
+  tg.drawImage(src, sx,sy,sw,sh, 0,0,dw,dh);
+  tg.globalCompositeOperation='source-atop'; tg.fillStyle=rgba; tg.fillRect(0,0,bw,bh);
+  g.drawImage(tintBuf, dx,dy);
+}
+// re-sample whatever is currently on the canvas (the background) at low res and blow it
+// back up with no smoothing -> chunky pixels that echo the pixel-art sprites
+function pixelateBackground(){
+  const lw=Math.floor(W/PIXEL), lh=Math.floor(H/PIXEL);
+  pixBuf.width=lw; pixBuf.height=lh;
+  pxg.imageSmoothingEnabled=false; pxg.clearRect(0,0,lw,lh);
+  pxg.drawImage(cv, 0,0,W,H, 0,0,lw,lh);
+  g.imageSmoothingEnabled=false; g.drawImage(pixBuf, 0,0,lw,lh, 0,0,W,H);
+  g.imageSmoothingEnabled=true;
+}
+
 /* ---------- sprite sheets: Pikachu run cycle + jump ---------- */
 const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386, cnv:null };
 pika.img.onload = ()=>{ pika.cnv=cleanSheet(pika.img, pika.frames); pika.ready=true; };
@@ -781,8 +806,9 @@ function drawCreature(x,y,mood){
     if(mood==='oops'){ g.translate(x,feetY); g.rotate(0.12); g.translate(-x,-feetY); }
     g.imageSmoothingEnabled=true;
     const src=sheet.cnv||sheet.img, ins=1;        // cleaned sheet + 1px inset = no neighbour-frame bleed
-    g.drawImage(src, frameIdx*sheet.cw+ins,0,sheet.cw-2*ins,sheet.ch, dx,dy,dw,dh);
-    if(mood==='oops'){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.30)'; g.fillRect(dx,dy,dw,dh); }
+    const sx=frameIdx*sheet.cw+ins, sw=sheet.cw-2*ins;
+    if(mood==='oops') drawTinted(src, sx,0,sw,sheet.ch, dx,dy,dw,dh, 'rgba(255,70,80,.42)');  // red flash on the sprite only
+    else g.drawImage(src, sx,0,sw,sheet.ch, dx,dy,dw,dh);
   } else {
     // simple placeholder while the sprite sheet loads
     g.fillStyle='#ffd166'; g.beginPath(); g.arc(x,y+bob,22,0,7); g.fill();
@@ -1049,8 +1075,8 @@ function drawBossSprite(){
   if(spr&&spr.ready){
     const im=spr2d(spr), s=BOSS_H/im.height, w=im.width*s;
     g.imageSmoothingEnabled=true;
-    g.drawImage(im, -w/2, -BOSS_H/2, w, BOSS_H);
-    if(boss.hurt>0){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.40)'; g.fillRect(-w/2,-BOSS_H/2,w,BOSS_H); }
+    if(boss.hurt>0) drawTinted(im, 0,0,im.width,im.height, -w/2,-BOSS_H/2, w,BOSS_H, 'rgba(255,80,90,.42)');  // hit flash on the sprite only
+    else g.drawImage(im, -w/2, -BOSS_H/2, w, BOSS_H);
   } else {
     g.scale(-1,1);                 // face the placeholder left, toward Pikachu
     drawSerpentPlaceholder(boss.cfg.tint, boss.hurt>0);
@@ -1193,6 +1219,7 @@ function drawBossMsg(){
    ============================================================ */
 function render(){
   drawBackground();
+  pixelateBackground();          // chunky 8-bit pass over the scenery (sprites/text stay crisp)
   if(speedMode) drawSpeedLines();
   drawParticles();
 
