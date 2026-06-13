@@ -1,0 +1,107 @@
+# Progress / status
+
+Working notes for **Spark Run — Maths Adventure**. All game code lives in
+`sparkrunmath.html` (single inline `<script>`). Branch:
+`claude/pokemon-math-game-v1-txqzrt`.
+
+_Last updated: 2026-06-13._
+
+## Done
+
+### Maths runner (levels 1–5)
+- 25 questions per level on a within-level difficulty ramp (`LEVELS`).
+- L1 addition (eased: `1+n` → single digits → two-digit no-carry → round
+  doubles); L2 subtraction; L3 +/− mix; L4 ×; L5 +/−/× (× on 6–9 tables).
+- 3 hearts, refilled at the start of each level (shared with that level's boss).
+- Correct answer placed in a **uniformly random** lane (`makeChoices`).
+- Speed run (×1.5, ⅓ less time) on a 5-streak — difficulty unchanged.
+- Wrong answer: dazed Pikachu wobble + dust/stars (`oopsPuff`).
+- Pause button + `P`/`Esc`; music pauses too.
+
+### Scenery
+- Multi-layer parallax driven by one `world` scroll accumulator.
+- Per-level scenes (`SCENES`): meadow+snowy mountains, orchard, bubble bay,
+  crystal cave, star summit. Snow-cap peaks, clouds, bubbles, crystals.
+- 8-bit post-pixelation was tried and **reverted** (caused scrolling shimmer).
+
+### Level 1 boss — Gyarados lair duel (no maths)
+- `bossMode='duel'` flag on `BOSSES[0]`; L2–L5 keep the classic scrolling-maths
+  boss untouched.
+- **Scene:** lake with a back basin + front surface so Gyarados sits **partly
+  submerged**; he **rises out of the lake** on entry. Ash on the left bank,
+  Pikachu beside him (crouched stance, not running).
+- **Scripted intro** (`buildIntro`/`tickIntro`): roar → Pikachu → Ash hey →
+  wanna-battle → Pikachu → Ash encouragement → **"Ready to battle?"** prompt.
+  Sounds are sequenced with gaps and channelled (no overlap). Tap skips the
+  cutscene to the prompt.
+- **Energy bars** (0–100): Pikachu yellow (left), Gyarados blue (right); red at
+  ≤10%. Hearts/charge meter hidden in the duel.
+- **Combat:** basic move = instant / 10% dmg; special = ~0.55s wind-up / 15%.
+  Gyarados attacks the same (basic short tell / special long tell). Dodge window
+  length = wind-up. Gyarados **submerge-dodges** (~28%) and, once at ≤30% HP,
+  **dives → heals ~45% → re-emerges stronger** (power ×1.35, plays Dragon
+  Dance). Pikachu at ≤18% gets an **angry rile-up** (+24% energy, once).
+- **Controls:** circular move buttons (icons + cost/`FAST`/`POWER` + `Z X C V B`
+  key chips); 3 dodge arrows during a wind-up (`◀ ▲ ▶`, any one dodges).
+- **Animations:** Pikachu 4-frame move sequences (`pika_seq_*`); real 4-frame
+  dodge roll (`pika_roll*`); Gyarados Dragon Dance / Waterfall / Ice Fang
+  (`gyara_seq_*`). Ash poses (ready/point/punch) driven by battle beats.
+- Removed the drawn "serpent placeholder" — nothing draws until the real sprite
+  loads.
+
+### Audio
+- `Audio8` chiptune + `music.mp3`/`music2.mp3` (speed-run crossfade) +
+  `levelup.mp3`.
+- `voice(file, vol, chan)` one-shot clips with channels `foe`/`pika`/`ash`.
+
+## Open items / TODO
+- **Tablet test pass** — likely tweaks: dodge-button + move-button **size and
+  position** (currently fixed px on the 960×540 canvas); consider scaling
+  controls to screen size.
+- **Balance tuning** (all first-pass, untested): energy 100 each; dmg 10/15;
+  dive at 30% HP heals 45%; submerge-dodge 28%; rile at 18%; wind-ups
+  basic 0.85s / special 1.5s; intro ~9s (has skip).
+- **Earthquake** sheet missing — Gyarados's 4th move falls back to a static
+  image. Same for non-sequenced Pikachu moves (Electroweb, Charm, Reflect,
+  G-Max) and the other bosses' moves — they animate only once 2×2 sheets are
+  supplied.
+- **Other bosses (L2–L5)** are still the classic maths boss; no lair duels yet
+  (deferred by choice).
+- Possible: weight the speed-run move mix; mid-level checkpoint; per-level boss
+  question styles for the classic bosses.
+
+## Asset pipeline (how supplied sheets are turned into game assets)
+
+Supplied art often comes as a **2×2 grid sheet** (4 frames) with a title bar and
+per-cell labels, on a flat background. Extraction (done offline with Pillow,
+then committed as cleaned PNGs) roughly:
+
+1. **Find the character rows** by scanning row-density of "content" pixels
+   (yellow for Pikachu; saturated for Gyarados) — titles/labels have none, so
+   they fall outside the detected bands.
+2. **Crop each cell** to its band, split into left/right halves, shaving the
+   inner/outer edges to drop the grid divider lines.
+3. **Remove the background:**
+   - Gray bg (Pikachu sheets): flood-fill from the crop edges.
+   - Dark/black bg (Gyarados sheets): a **global** dark key (near-black →
+     transparent) — needed because big effects touch every edge, so edge
+     flood-fill can't reach the enclosed background.
+4. **Drop label remnants:** remove small components and wide-thin (text-shaped)
+   blobs; occasionally a targeted top-crop where a label merged into a bright
+   effect (e.g. Waterfall's "Power" frame).
+5. **Assemble** the 4 frames into a uniform horizontal strip and record
+   `cw`/`ch` in `MOVE_SEQ` / `BOSS_SEQ` (+ on-screen size `h` and anchor `ax`).
+
+In-game, run/jump/move/boss sheets are sliced by frame at draw time;
+`cleanSprite`/`cleanSheet`/`drawTinted` handle per-load fixes (fringe/dark-disc
+removal, neighbour-bleed, isolated hit-flash tint).
+
+## Layout quick-reference (in `sparkrunmath.html`)
+- Maths generators: `LEVELS`, `makeChoices`.
+- Scenery: `SCENES`, `drawBackground` and its layer helpers.
+- Moves: `PIKA_MOVES`, `MOVE_SEQ`; bosses `BOSSES`, `BOSS_SEQ`.
+- Duel logic: `enterBoss`, `buildIntro`/`tickIntro`, `castMove`/`applyPikaHit`,
+  `foeAttack`, `doDodge`, `rileUp`, `updateDuel`.
+- Duel drawing: `drawDuel`, `drawBossSprite`, `drawDuelBars`, `drawMoveBar`,
+  `drawDodgeButtons`, `drawAsh`, `drawRoll`, `drawPikaAttack`.
+- Input: `onPress`, the `keydown` handler (`MOVE_KEYS`).
