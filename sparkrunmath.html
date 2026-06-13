@@ -255,6 +255,7 @@ function crossfade(toFast){
   return {
     toggle(){ muted=!muted; if(muted){ bgm.pause(); fast.pause(); } else if(started){ (speedOn?fast:bgm).play().catch(()=>{}); } return muted; },
     isMuted(){return muted;},
+    pauseAudio(p){ if(p){ bgm.pause(); fast.pause(); } else if(started && !muted){ (speedOn?fast:bgm).play().catch(()=>{}); } },
     startMusic(){ ensure(); if(started) return; started=true; if(!muted) bgm.play().catch(()=>{}); },
     setSpeed(on){ if(on===speedOn) return; speedOn=on; if(started) crossfade(on); },
     isSpeed(){ return speedOn; },
@@ -340,6 +341,7 @@ function makeChoices(ans){
    GAME STATE
    ============================================================ */
 let state='menu';           // menu | play | resolve | levelup | over | won
+let paused=false;           // pause overlay during gameplay
 let levelIdx=0, stepInLvl=0, score=0, streak=0, hearts=3;
 let prizes=[];              // collected sparks per level
 
@@ -386,10 +388,10 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
-  levelIdx=i; stepInLvl=0; state='play'; hearts=3;       // fresh 3 lives each level (shared with its boss)
+  levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
   player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0];
   spawnGate();
 }
@@ -472,7 +474,12 @@ function hop(){
 
 /* mute button hit-test region (top-right) */
 const MUTE={x:W-58,y:18,w:40,h:40};
+const PAUSE={x:W-106,y:18,w:40,h:40};                          // pause toggle, left of mute
+const RESUME={x:W/2-150,y:H/2+20,w:300,h:64};                  // big resume button on the pause overlay
 function pointInMute(px,py){ return px>=MUTE.x&&px<=MUTE.x+MUTE.w&&py>=MUTE.y&&py<=MUTE.y+MUTE.h; }
+function pointInRect(r,px,py){ return px>=r.x&&px<=r.x+r.w&&py>=r.y&&py<=r.y+r.h; }
+function inGameplay(){ return state==='play'||state==='resolve'||state==='boss'; }
+function setPaused(p){ if(p===paused) return; paused=p; Audio8.pauseAudio(p); Audio8.sfx('select'); }
 
 function canvasPoint(e){
   const r=cv.getBoundingClientRect();
@@ -486,6 +493,8 @@ function onPress(e){
   e.preventDefault();
   const p=canvasPoint(e);
   if(pointInMute(p.x,p.y)){ Audio8.toggle(); Audio8.sfx('select'); return; }
+  if(inGameplay() && pointInRect(PAUSE,p.x,p.y)){ setPaused(!paused); return; }   // pause / unpause
+  if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
   if(state==='boss'){                                  // tap a move button to equip it (not a jump)
     for(const r of moveBarRects()){
       if(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){
@@ -499,12 +508,16 @@ function onPress(e){
 }
 cv.addEventListener('mousedown',onPress);
 cv.addEventListener('touchstart',onPress,{passive:false});
-window.addEventListener('keydown',e=>{ if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); hop(); } });
+window.addEventListener('keydown',e=>{
+  if(e.code==='KeyP'||e.code==='Escape'){ if(inGameplay()){ e.preventDefault(); setPaused(!paused); } return; }
+  if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(!paused) hop(); }
+});
 
 /* ============================================================
    UPDATE
    ============================================================ */
 function update(dt){
+  if(paused) return;                  // freeze all game logic while the pause overlay is up
   // master world scroll — drives every parallax layer. Faster in play, faster still in a speed run.
   const runState=(state==='play'||state==='resolve'||state==='boss');
   const worldSpd = runState ? (speedMode?188:96) : 34;
@@ -907,10 +920,27 @@ function drawHUD(){
     g.beginPath(); g.moveTo(PLAYER_X-70,ly); g.lineTo(PLAYER_X-54,ly-9); g.lineTo(PLAYER_X-54,ly+9); g.closePath(); g.fill();
   }
 
+  // pause button (left of mute) — only while playing
+  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(PAUSE.x,PAUSE.y,PAUSE.w,PAUSE.h,12); g.fill();
+  g.fillStyle=C.cream; g.font='18px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText(paused?'▶':'❚❚', PAUSE.x+PAUSE.w/2, PAUSE.y+PAUSE.h/2+1); g.restore();
   // mute button
   g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12); g.fill();
   g.fillStyle=C.cream; g.font='20px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
   g.fillText(Audio8.isMuted()?'🔇':'🔊', MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
+}
+
+/* pause overlay — dims the frozen frame and offers a big Resume button */
+function drawPause(){
+  g.fillStyle='rgba(12,8,26,.62)'; g.fillRect(0,0,W,H);
+  g.textAlign='center';
+  g.save(); g.shadowColor='rgba(0,0,0,.5)'; g.shadowBlur=6; g.shadowOffsetY=2;
+  g.fillStyle=C.cream; g.font='700 64px Fredoka, sans-serif'; g.fillText('Paused', W/2, H/2-30);
+  g.restore();
+  g.fillStyle=C.leaf; rr(RESUME.x,RESUME.y,RESUME.w,RESUME.h,22); g.fill();
+  g.fillStyle='#fff'; g.font='700 30px Fredoka, sans-serif'; g.textBaseline='middle';
+  g.fillText('▶  Resume', W/2, RESUME.y+RESUME.h/2+1);
+  g.textBaseline='alphabetic'; g.textAlign='left';
 }
 
 /* ----- overlay screens ----- */
@@ -1270,6 +1300,7 @@ function drawMuteOnly(){
 function frame(now){
   let dt=(now-lastT)/1000; lastT=now; if(dt>0.05) dt=0.05;
   update(dt); render();
+  if(paused) drawPause();             // overlay rides on top of the frozen frame
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
