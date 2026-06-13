@@ -88,7 +88,12 @@ const BOSSES = [
       { name:'Bullet Punch', file:'sciz_bulletpunch.png', col:'#bfe6ff' },
       { name:'Air Slash',   file:'sciz_airslash.png',   col:'#dfeaf5' },
     ] },
-  { name:'Boss 5',   file:null,           tint:'#d0a05f' },
+  { name:'Galarian Moltres', file:'galmoltres.png', tint:'#c03a6a', moves:[
+      { name:'Fiery Wrath', file:'moltres_fierywrath.png', col:'#ff4a9a' },
+      { name:'Air Slash',   file:'moltres_airslash.png',   col:'#bfeaff' },
+      { name:'Dark Pulse',  file:'moltres_darkpulse.png',  col:'#9a6ae0' },
+      { name:'Hurricane',   file:'moltres_hurricane.png',  col:'#cfe6f5' },
+    ] },
 ];
 const bossImgs={};                                // lazy sprite cache, keyed by filename
 function bossSprite(file){
