@@ -96,11 +96,32 @@ const BOSSES = [
     ] },
 ];
 const bossImgs={};                                // lazy sprite cache, keyed by filename
+// Some source PNGs ship with a semi-transparent dark fringe (a low-alpha matte
+// ring) that reads as a black box over the bright sky. On load we flood-fill in
+// from the borders through any low-alpha pixels and knock them fully clear — this
+// erases the halo while leaving the solid sprite (and its interior dark parts,
+// e.g. Lucario's black, which keep full alpha) untouched.
+function cleanSprite(o){
+  try{
+    const im=o.img, w=im.width, h=im.height;
+    if(!w||!h) return;
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const cx=c.getContext('2d'); cx.drawImage(im,0,0);
+    const id=cx.getImageData(0,0,w,h), d=id.data, CUT=180, seen=new Uint8Array(w*h), stack=[];
+    const push=(x,y)=>{ if(x<0||y<0||x>=w||y>=h) return; const i=y*w+x; if(seen[i]||d[i*4+3]>=CUT) return; seen[i]=1; stack.push(i); };
+    for(let x=0;x<w;x++){ push(x,0); push(x,h-1); }
+    for(let y=0;y<h;y++){ push(0,y); push(w-1,y); }
+    while(stack.length){ const i=stack.pop(); d[i*4+3]=0; const x=i%w, y=(i/w)|0; push(x+1,y); push(x-1,y); push(x,y+1); push(x,y-1); }
+    cx.putImageData(id,0,0); o.cnv=c;
+  }catch(e){ /* tainted canvas (e.g. file://) — fall back to the raw image */ }
+}
 function bossSprite(file){
   if(!file) return null;
-  if(!bossImgs[file]){ const o={img:new Image(),ready:false}; o.img.onload=()=>{o.ready=true;}; o.img.src=file; bossImgs[file]=o; }
+  if(!bossImgs[file]){ const o={img:new Image(),ready:false,cnv:null}; o.img.onload=()=>{ cleanSprite(o); o.ready=true; }; o.img.src=file; bossImgs[file]=o; }
   return bossImgs[file];
 }
+// the drawable for a sprite: the cleaned canvas if we have it, else the raw image
+function spr2d(s){ return s ? (s.cnv||s.img) : null; }
 
 // Pikachu's move set — 2 at level 1, learn one more each level you clear.
 // unlock = level index the move becomes available; cost/gain feed the charge meter.
@@ -220,38 +241,50 @@ function crossfade(toFast){
 const rnd=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 
-// each level: a generator(step 0..n-1) -> {q, ans}
+// each level is a 25-question run: gen(step 0..24) -> {q,ans}.
+// optional bossGen() gives the end-of-level duel its own flavour of questions.
 const LEVELS = [
-  { name:'Bloom Meadow',  theme:'balloon', count:8,
-    // L1 — easy addition, small sums that grow a little through the level
-    gen:s=>{ const cap=8+s; const a=rnd(1,Math.min(7,cap-1)); const b=rnd(1,Math.max(1,cap-a)); return {q:`${a} + ${b}`, ans:a+b}; } },
-  { name:'Orchard Hop',   theme:'apple', count:8,
-    // L2 — subtraction within ~20, often bridging back through ten
-    gen:s=>{ const a=rnd(11,15+s); const b=rnd(3,Math.min(9,a-2)); return {q:`${a} − ${b}`, ans:a-b}; } },
-  { name:'Bubble Bay',    theme:'bubble', count:9,
-    // L3 — two-digit add & subtract, with carrying / borrowing
-    gen:s=>{ const big=16+s*3;
-             if(s%2===0){ const a=rnd(12,big), b=rnd(8,19); return {q:`${a} + ${b}`, ans:a+b}; }
-             const a=rnd(22,big+16), b=rnd(8,Math.min(a-5,19)); return {q:`${a} − ${b}`, ans:a-b}; } },
-  { name:'Crystal Caves', theme:'crystal', count:9,
-    // L4 — times tables: start 2/5/10, widen to 3/4 later in the level
-    gen:s=>{ const t = s<4 ? pick([2,5,10]) : pick([2,5,10,3,4]); const n=rnd(2,Math.min(12,5+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
-  { name:'Star Summit',   theme:'crystal', count:10,
+  { name:'Bloom Meadow',  theme:'balloon', count:25,
+    // L1 — addition, eased in: a couple of "1 + n", then single digits,
+    // then two-digit + two-digit, then round doubles (25+25, 45+45…).
+    gen:s=>{
+      if(s<2){ const b=rnd(1,4); return {q:`1 + ${b}`, ans:1+b}; }
+      if(s<10){ const a=rnd(2,6), b=rnd(2,6); return {q:`${a} + ${b}`, ans:a+b}; }
+      if(s<19){ const a=rnd(11,29), b=rnd(11,29); return {q:`${a} + ${b}`, ans:a+b}; }
+      const a=pick([15,25,35,45,55]), b=pick([15,25,35,45,55]); return {q:`${a} + ${b}`, ans:a+b}; },
+    // boss — two-digit + single-digit, usually bridging a ten (46+5, 81+9…)
+    bossGen:()=>{ const a=rnd(21,89), b=rnd(4,10); return {q:`${a} + ${b}`, ans:a+b}; } },
+  { name:'Orchard Hop',   theme:'apple', count:25,
+    // L2 — subtraction only, growing from the teens toward ~30
+    gen:s=>{ const a=rnd(11,Math.min(30,13+s)); const b=rnd(3,Math.min(15,a-2)); return {q:`${a} − ${b}`, ans:a-b}; } },
+  { name:'Bubble Bay',    theme:'bubble', count:25,
+    // L3 — mix of + and −, two-digit with carrying / borrowing (kept under 100)
+    gen:s=>{ const big=Math.min(70,16+s*2);
+             if(s%2===0){ const a=rnd(12,big), b=rnd(8,Math.min(big,29)); return {q:`${a} + ${b}`, ans:a+b}; }
+             const a=rnd(22,Math.min(95,big+20)), b=rnd(8,Math.min(a-5,29)); return {q:`${a} − ${b}`, ans:a-b}; } },
+  { name:'Crystal Caves', theme:'crystal', count:25,
+    // L4 — multiplication only: start 2/5/10, widen to 3/4 deeper in
+    gen:s=>{ const t = s<6 ? pick([2,5,10]) : pick([2,5,10,3,4]); const n=rnd(2,Math.min(12,4+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
+  { name:'Star Summit',   theme:'crystal', count:25,
     // L5 — mix of +, − and × ; the × uses the hard tables 6,7,8,9
     gen:s=>{ const r=rnd(0,2);
-             if(r===0){ const a=rnd(15,30), b=rnd(10,25); return {q:`${a} + ${b}`, ans:a+b}; }
-             if(r===1){ const a=rnd(25,50), b=rnd(8,Math.min(a-5,24)); return {q:`${a} − ${b}`, ans:a-b}; }
+             if(r===0){ const a=rnd(15,35), b=rnd(10,28); return {q:`${a} + ${b}`, ans:a+b}; }
+             if(r===1){ const a=rnd(25,55), b=rnd(8,Math.min(a-5,29)); return {q:`${a} − ${b}`, ans:a-b}; }
              const t=pick([6,7,8,9]), n=rnd(2,Math.min(12,6+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
 ];
 
 function makeChoices(ans){
-  const set=new Set([ans]); const out=[];
-  // plausible near-misses (off by 1/2/10, common errors)
-  const cand=[ans+1,ans-1,ans+2,ans-2,ans+10,ans-10,ans+3];
-  while(set.size<3){ const d=pick(cand)+rnd(-1,1); if(d>=0 && d!==ans && !set.has(d)){ set.add(d); } }
-  set.forEach(v=>out.push(v));
-  // shuffle
-  for(let i=out.length-1;i>0;i--){const j=rnd(0,i);[out[i],out[j]]=[out[j],out[i]];}
+  // build two plausible near-miss distractors (off by 1/2/3/10 — common slips)
+  const set=new Set([ans]);
+  const cand=[ans+1,ans-1,ans+2,ans-2,ans+10,ans-10,ans+3,ans-3];
+  let guard=0;
+  while(set.size<3 && guard++<60){ const d=pick(cand)+rnd(-1,1); if(d>=0 && d!==ans) set.add(d); }
+  while(set.size<3){ set.add(ans+set.size+2); }            // absolute fallback
+  const distract=[...set].filter(v=>v!==ans);
+  // drop the correct answer into a uniformly-random lane so it's never predictable
+  const out=[null,null,null], correctLane=rnd(0,2);
+  out[correctLane]=ans;
+  let di=0; for(let i=0;i<3;i++){ if(i!==correctLane) out[i]=distract[di++]; }
   return out;
 }
 
@@ -297,10 +330,18 @@ function correctPop(x,y){
     stars.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.55+Math.random()*0.35,r:6+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*16,c:pick([C.glow,C.mint,C.spark,'#fff'])}); }
 }
 
+// little stumble on a wrong answer: a grey dust puff + a few dizzy "★" sparks over Pikachu's head
+function oopsPuff(x,y){
+  player.mood='oops'; player.moodT=0.8;
+  for(let i=0;i<9;i++) confetti.push({x:x+(Math.random()-0.5)*20,y:y-6,vx:(Math.random()-0.5)*150,vy:-Math.random()*130-20,life:0.7,r:3+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*12,c:pick(['#cfc7e0','#9a90b5','#fff'])});
+  for(let i=0;i<3;i++){ const a=Math.random()*Math.PI*2, sp=40+Math.random()*60;
+    stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
+}
+
 function resetRun(){ levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
-  levelIdx=i; stepInLvl=0; state='play';
+  levelIdx=i; stepInLvl=0; state='play'; hearts=3;       // fresh 3 lives each level (shared with its boss)
   player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0];
   spawnGate();
 }
@@ -309,9 +350,9 @@ function spawnGate(){
   const L=LEVELS[levelIdx];
   const {q,ans}=L.gen(stepInLvl);
   const choices=makeChoices(ans);
-  // slow at first; ramps with step and level
+  // slow at first; ramps with step and level, but capped so a 25-question run stays fair
   const base=92 + levelIdx*16;
-  speed = base + stepInLvl*9;
+  speed = base + Math.min(90, stepInLvl*5);
   gate={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
 }
@@ -345,7 +386,9 @@ function bossAttack(){
 }
 function spawnChallenge(){
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
-  const L=LEVELS[levelIdx]; const {q,ans}=L.gen(rnd(0,Math.max(0,L.count-1)));
+  const L=LEVELS[levelIdx];
+  // boss uses its own question style if defined, else the level's hardest stretch
+  const {q,ans} = L.bossGen ? L.bossGen() : L.gen(rnd(Math.floor(L.count*0.6), L.count-1));
   const choices=makeChoices(ans);
   bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
 }
@@ -470,8 +513,9 @@ function update(dt){
         for(let i=0;i<18;i++) confetti.push({x:PLAYER_X+10,y:player.y,vx:(Math.random()-0.3)*260,vy:-Math.random()*320-60,life:1.1,r:4+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*12,c:pick([C.glow,C.coral,C.mint,C.spark])});
         if(streak>=SPEED_STREAK) setSpeedMode(true);    // hot streak → SPEED RUN!
       } else {
-        streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
+        streak=0; hearts--;
         Audio8.sfx('bad'); flash={a:0.4,col:'#ffb3b8'};
+        oopsPuff(PLAYER_X, player.y);                   // dazed stumble animation
         setSpeedMode(false);                            // a miss ends the speed run
       }
       state='resolve';
@@ -524,7 +568,7 @@ function update(dt){
           Audio8.sfx('select'); flash={a:0.35,col:'#9fd8ff'};
           bossMsg='Blocked '+boss.cfg.name+"'s attack! 🛡️"; bossMsgT=1.3;   // shield soaks it, no heart lost
         } else {
-          streak=0; hearts--; player.mood='oops'; player.moodT=0.7;
+          streak=0; hearts--; oopsPuff(PLAYER_X, player.y);   // dazed stumble animation
           Audio8.sfx('bad'); const d=bossAttack(); if(d) bossChal.resolveT=d;   // play boss move cut-in
         }
         if(hearts<=0){ Audio8.sfx('bad'); state='over'; return; }
@@ -573,6 +617,7 @@ function drawBackground(){
 function drawCreature(x,y,mood){
   const airborne = player.air;
   const bob = airborne ? 0 : Math.sin(player.bob)*3;     // no run-bob mid-jump
+  if(mood==='oops') x += Math.sin(player.moodT*40)*6;    // dazed side-to-side wobble on a wrong answer
   const sheet = (airborne && jump.ready) ? jump : pika;
   const frameIdx = (sheet===jump) ? player.jumpFrame : player.frame;
   const H0 = (sheet===jump) ? JUMP_H : PIKA_H;
@@ -750,8 +795,8 @@ function drawLevelUp(){
     g.fillText('Score: '+score, W/2, H/2+44);
     if(learned){                              // showcase the new move sprite
       const spr=bossSprite(learned.file);
-      if(spr&&spr.ready){ const h=110, w=spr.img.width*(h/spr.img.height);
-        g.imageSmoothingEnabled=true; g.drawImage(spr.img, W/2-w/2, H/2+58, w, h); }
+      if(spr&&spr.ready){ const im=spr2d(spr), h=110, w=im.width*(h/im.height);
+        g.imageSmoothingEnabled=true; g.drawImage(im, W/2-w/2, H/2+58, w, h); }
     }
   });
 }
@@ -819,7 +864,7 @@ function drawBossCutIn(){
   const ix=-pw/2+10, iy=-ph/2+10, iw=pw-20, ih=ph-78;
   g.save(); rr(ix,iy,iw,ih,14); g.clip();
   if(c.spr&&c.spr.ready){
-    const im=c.spr.img, s=Math.max(iw/im.width, ih/im.height), w=im.width*s, h=im.height*s;
+    const im=spr2d(c.spr), s=Math.max(iw/im.width, ih/im.height), w=im.width*s, h=im.height*s;
     g.imageSmoothingEnabled=true; g.drawImage(im, ix+(iw-w)/2, iy+(ih-h)*0.32, w, h);  // bias toward the head/action
   } else { g.fillStyle=c.m.col; g.fillRect(ix,iy,iw,ih); }
   // speed-streak overlay sweeping across
@@ -850,9 +895,9 @@ function drawBossSprite(){
   if(!(spr&&spr.ready)) spr=bossSprite(boss.cfg.file);     // fall back to idle if not loaded yet
   g.save(); g.globalAlpha=alpha; g.translate(cx,cy+sink); g.rotate(rot);
   if(spr&&spr.ready){
-    const s=BOSS_H/spr.img.height, w=spr.img.width*s;
+    const im=spr2d(spr), s=BOSS_H/im.height, w=im.width*s;
     g.imageSmoothingEnabled=true;
-    g.drawImage(spr.img, -w/2, -BOSS_H/2, w, BOSS_H);
+    g.drawImage(im, -w/2, -BOSS_H/2, w, BOSS_H);
     if(boss.hurt>0){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.40)'; g.fillRect(-w/2,-BOSS_H/2,w,BOSS_H); }
   } else {
     g.scale(-1,1);                 // face the placeholder left, toward Pikachu
@@ -934,8 +979,8 @@ function drawMoveBar(){
     g.fillStyle = sel?'rgba(46,30,68,.97)':'rgba(24,16,40,.88)'; rr(r.x,r.y,r.w,r.h,10); g.fill();
     const spr=bossSprite(m.file);
     g.save(); rr(r.x+3,r.y+3,r.w-6,r.h-6,7); g.clip();    // sprite thumbnail (cover)
-    if(spr&&spr.ready){ const s=Math.max((r.w-6)/spr.img.width,(r.h-6)/spr.img.height), iw=spr.img.width*s, ih=spr.img.height*s;
-      g.imageSmoothingEnabled=true; g.drawImage(spr.img, r.x+3+((r.w-6)-iw)/2, r.y+3+((r.h-6)-ih)*0.28, iw, ih); }
+    if(spr&&spr.ready){ const im=spr2d(spr), s=Math.max((r.w-6)/im.width,(r.h-6)/im.height), iw=im.width*s, ih=im.height*s;
+      g.imageSmoothingEnabled=true; g.drawImage(im, r.x+3+((r.w-6)-iw)/2, r.y+3+((r.h-6)-ih)*0.28, iw, ih); }
     g.fillStyle='rgba(0,0,0,.42)'; g.fillRect(r.x+3, r.y+r.h-18, r.w-6, 15);   // legibility strip
     g.restore();
     // effect (left) + cost (right) along the bottom
@@ -952,7 +997,7 @@ function drawMoveBar(){
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
 }
 function drawPikaAttack(){
-  const a=pikaAtk, p=a.t/a.dur, im=a.spr.img;
+  const a=pikaAtk, p=a.t/a.dur, im=spr2d(a.spr);
   const h=176, w=im.width*(h/im.height);
   const x=PLAYER_X - w*0.34 + p*26, y=player.y - h*0.55;     // small forward lunge
   g.save(); g.globalAlpha=Math.min(1,(1-p)*1.7+0.22);
