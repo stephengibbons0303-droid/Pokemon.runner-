@@ -77,7 +77,16 @@ const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen hei
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
 // (more Pokémon to come; each gets its own sprite + tint.)
 const BOSSES = [
-  { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0', moves:[
+  { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0',
+    duel:'lake',                                  // L1 uses the no-math lair duel (lake scene)
+    roar:'gyara_roar.mp3', cry:'gyara_cry.mp3', roar2:'gyara_roar2.mp3',
+    lines:[
+      { who:'gyara', txt:'GRAAAH! Who disturbs my lake?' },
+      { who:'pika',  txt:'Pika-pi! (We just want to pass!)' },
+      { who:'gyara', txt:'None shall pass. Feel my Outrage!' },
+      { who:'pika',  txt:'Pika! ⚡ (Then we battle!)' },
+    ],
+    moves:[
       { name:'Dragon Dance', file:'gyara_dragondance.png', col:'#b18cf0' },
       { name:'Waterfall',    file:'gyara_waterfall.png',   col:'#5fb0e6' },
       { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a' },
@@ -277,6 +286,17 @@ function crossfade(toFast){
   };
 })();
 
+/* one-shot voice clips (boss roars / cries) — cached <audio>, respect the mute toggle */
+const VOICES={};
+function voice(file, vol){
+  try{
+    let a=VOICES[file];
+    if(!a){ a=new Audio(file); VOICES[file]=a; }
+    a.volume = vol==null?0.9:vol; a.currentTime=0;
+    if(!Audio8.isMuted()) a.play().catch(()=>{});
+  }catch(e){}
+}
+
 /* ============================================================
    MATHS — 5 levels on a gentle incremental ramp
    L1 addition only → L2 subtraction only → L3 mix of + and − →
@@ -362,6 +382,11 @@ let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon b
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
 let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
 let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
+// no-math lair duel (Gyarados): a static confrontation — chat, then tap moves vs. dodge attacks
+let bossMode='classic';        // 'duel' = lair fight, else the classic scrolling-math boss
+let bossPhase='';              // duel: 'intro' (dialogue) | 'battle'
+let dlg=null, dlgIdx=0;        // active dialogue lines + cursor
+let foeTimer=0, dodgeWin=0, castCD=0;   // foe attack countdown, open dodge window, player move cooldown
 
 function setSpeedMode(on){
   if(on===speedMode) return;
@@ -388,7 +413,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; dlg=null; dodgeWin=0; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -416,13 +441,64 @@ function spawnGate(){
 function enterBoss(){
   state='boss'; gate=null; setSpeedMode(false);
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
-  const hp=4+levelIdx*3;                              // scaled so 1–3 dmg moves take a few turns
+  bossMode = cfg.duel ? 'duel' : 'classic';
+  const hp = cfg.duel ? 10 : (4+levelIdx*3);          // duel lasts a bit longer so dodging matters
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0 };
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
-  if(!availMoves().some(m=>m.key===equipped)) equipped='tb';
-  bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
+  if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
+  if(bossMode==='duel'){
+    bossPhase='intro'; dlg=cfg.lines||[]; dlgIdx=0; foeTimer=2.6; dodgeWin=0; castCD=0;
+    bossMsg=''; bossMsgT=0; if(cfg.roar) voice(cfg.roar);   // a wild roar greets you
+  } else {
+    bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
+  }
+}
+/* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
+function advanceDialogue(){
+  dlgIdx++;
+  if(dlgIdx>=dlg.length){ bossPhase='battle'; foeTimer=2.4; bossMsg='Battle!'; bossMsgT=1.0; return; }
+  const ln=dlg[dlgIdx];
+  if(ln && ln.who==='gyara' && boss.cfg.roar2) voice(boss.cfg.roar2,0.7);
+}
+function castMove(m){
+  if(castCD>0) return;
+  if(!canCast(m)){ Audio8.sfx('bad'); return; }
+  equipped=m.key;
+  charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
+  if(m.dmg>0){ boss.hp-=m.dmg; boss.hurt=0.6; if(boss.cfg.cry) voice(boss.cfg.cry,0.55); }
+  if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
+  pikaFire(m); Audio8.sfx('good'); flash={a:0.35,col:m.col};
+  player.mood='happy'; player.moodT=0.5; castCD=0.5;
+  bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
+  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.roar) voice(boss.cfg.roar); }
+}
+function foeAttack(){
+  boss.atk=0.6; flash={a:0.4,col:'#9fd8ff'};
+  if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7);
+  dodgeWin=1.3; foeTimer=3.6;                        // open the dodge window; schedule next strike
+  bossMsg=''; bossMsgT=0;
+}
+function doDodge(){
+  dodgeWin=0;
+  player.lane=1; player.targetY=LANE_Y[1]; player.air=true; player.reachedApex=false; player.jumpT=0;
+  Audio8.sfx('hop'); player.mood='happy'; player.moodT=0.4;
+  bossMsg='Dodged!'; bossMsgT=0.7;
+}
+function updateDuel(dt){
+  if(castCD>0) castCD-=dt;
+  // let a dodge-hop fall back down once it has peaked
+  if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
+  if(bossPhase!=='battle' || boss.defeated) return;
+  if(dodgeWin>0){
+    dodgeWin-=dt;
+    if(dodgeWin<=0){                                  // window closed without a dodge → take the hit
+      if(pikaShield>0){ pikaShield--; bossMsg='Blocked! 🛡️'; bossMsgT=1.0; Audio8.sfx('select'); }
+      else { hearts--; oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad'); flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9; }
+      if(hearts<=0){ state='over'; }
+    }
+  } else { foeTimer-=dt; if(foeTimer<=0) foeAttack(); }
 }
 // boss strikes back: play the next signature-move cut-in (Gyarados has 4)
 function bossAttack(){
@@ -495,7 +571,15 @@ function onPress(e){
   if(pointInMute(p.x,p.y)){ Audio8.toggle(); Audio8.sfx('select'); return; }
   if(inGameplay() && pointInRect(PAUSE,p.x,p.y)){ setPaused(!paused); return; }   // pause / unpause
   if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
-  if(state==='boss'){                                  // tap a move button to equip it (not a jump)
+  if(state==='boss' && bossMode==='duel'){             // lair duel input
+    if(bossPhase==='intro'){ advanceDialogue(); return; }       // tap = advance chat
+    if(dodgeWin>0){ doDodge(); return; }                        // tap anywhere = dodge the strike
+    for(const r of moveBarRects()){                             // tap a move = cast it at the boss
+      if(pointInRect(r,p.x,p.y)){ castMove(r.m); return; }
+    }
+    return;
+  }
+  if(state==='boss'){                                  // classic boss: tap a move button to equip it (not a jump)
     for(const r of moveBarRects()){
       if(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){
         if(!canCast(r.m)){ Audio8.sfx('bad'); return; }       // not enough charge
@@ -510,7 +594,9 @@ cv.addEventListener('mousedown',onPress);
 cv.addEventListener('touchstart',onPress,{passive:false});
 window.addEventListener('keydown',e=>{
   if(e.code==='KeyP'||e.code==='Escape'){ if(inGameplay()){ e.preventDefault(); setPaused(!paused); } return; }
-  if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(!paused) hop(); }
+  if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(paused) return;
+    if(state==='boss' && bossMode==='duel'){ if(bossPhase==='intro') advanceDialogue(); else if(dodgeWin>0) doDodge(); return; }
+    hop(); }
 });
 
 /* ============================================================
@@ -610,7 +696,9 @@ function update(dt){
       if(boss.deadT>=1.8) bossDefeated();
     } else if(boss.enter>0){
       boss.enter-=dt;
-      if(boss.enter<=0) spawnChallenge();      // start once the boss has slid in
+      if(boss.enter<=0 && bossMode==='classic') spawnChallenge();   // classic boss: start the math gates
+    } else if(bossMode==='duel'){
+      updateDuel(dt);                          // lair duel: dialogue then move-vs-dodge
     } else if(bossChal){
       bossChal.x -= bossSpeed*dt;
       if(!bossChal.locked && bossChal.x<=PLAYER_X){
@@ -1009,8 +1097,74 @@ function drawOver(){
   });
 }
 
-/* ----- Gyarados boss scene ----- */
+/* ----- Gyarados lair duel scene (no maths) ----- */
+function drawLake(){
+  // dusk-ish lair mood over the meadow, then a lake the foe rises from
+  g.fillStyle='rgba(18,28,58,.34)'; g.fillRect(0,0,W,FLOOR_Y);
+  g.save();
+  const wy=FLOOR_Y-4, cx=680;
+  g.fillStyle='#234e86'; g.beginPath(); g.ellipse(cx, wy+34, 392, 74, 0,0,7); g.fill();
+  g.fillStyle='#3170b0'; g.beginPath(); g.ellipse(cx, wy+24, 372, 58, 0,0,7); g.fill();
+  g.fillStyle='rgba(150,210,255,.18)'; g.beginPath(); g.ellipse(cx, wy+16, 340, 44, 0,0,7); g.fill();
+  // ripples + a moving shimmer
+  g.strokeStyle='rgba(255,255,255,.22)'; g.lineWidth=2;
+  for(let i=0;i<4;i++){ const rx=120+i*70+Math.sin(world*0.02+i)*6; g.beginPath(); g.ellipse(cx, wy+16, rx, rx*0.12, 0, 0, 7); g.stroke(); }
+  g.restore();
+}
+function drawDodgeWave(){
+  const p=1-Math.max(0,dodgeWin/1.3);                 // wave sweeps from the foe toward Pikachu
+  const x=(BOSS_X-70) + ((PLAYER_X+30)-(BOSS_X-70))*p;
+  g.save(); g.fillStyle='rgba(130,205,255,.75)'; g.strokeStyle='rgba(255,255,255,.8)'; g.lineWidth=3;
+  g.beginPath(); g.moveTo(x+40,FLOOR_Y);
+  for(let k=0;k<=8;k++){ const xx=x+40-k*12, yy=FLOOR_Y-18-Math.sin(k*0.9+world*0.05)*14-k*2; g.lineTo(xx,yy); }
+  g.lineTo(x-60,FLOOR_Y); g.closePath(); g.fill(); g.stroke();
+  g.restore();
+}
+function drawDialogue(){
+  const ln=dlg&&dlg[dlgIdx]; if(!ln) return;
+  const bx=70, bw=W-140, by=H-156, bh=116, foe=(ln.who==='gyara');
+  g.save();
+  g.fillStyle='rgba(16,12,32,.93)'; rr(bx,by,bw,bh,16); g.fill();
+  g.strokeStyle=foe?'#5fb0e6':'#ffe14a'; g.lineWidth=3; rr(bx,by,bw,bh,16); g.stroke();
+  g.textAlign='left'; g.textBaseline='top';
+  g.fillStyle=foe?'#9fe0ff':'#ffe14a'; g.font='700 22px Fredoka, sans-serif';
+  g.fillText(foe?(boss.cfg.name||'GYARADOS').toUpperCase():'PIKACHU', bx+24, by+16);
+  g.fillStyle=C.cream; g.font='600 27px Fredoka, sans-serif';
+  g.fillText(ln.txt, bx+24, by+52);
+  g.fillStyle='rgba(255,244,230,.65)'; g.font='600 16px Fredoka, sans-serif'; g.textAlign='right';
+  g.fillText('tap ▶', bx+bw-20, by+bh-28);
+  g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
+}
+function drawDodgePrompt(){
+  const a=0.55+0.45*Math.sin(performance.now()/90);
+  g.save(); g.textAlign='center'; g.globalAlpha=a;
+  g.font='700 46px Fredoka, sans-serif';
+  g.fillStyle=C.ink;     g.fillText('TAP TO DODGE!', W/2+2, 150+2);
+  g.fillStyle='#ff5a6a'; g.fillText('TAP TO DODGE!', W/2, 150);
+  g.restore();
+  g.save(); g.globalAlpha=0.22*a; g.fillStyle='#9fd8ff'; g.fillRect(0,0,W,14); g.fillRect(0,H-14,W,14); g.restore();
+  g.textAlign='left';
+}
+function drawDuel(){
+  drawLake();
+  drawBossSprite();
+  if(dodgeWin>0) drawDodgeWave();
+  drawZaps();
+  if(pikaShield>0) drawShield(PLAYER_X, player.y);
+  if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
+  else drawCreature(PLAYER_X, player.y, player.mood);
+  drawBossHUD();
+  if(bossPhase==='battle') drawMoveBar();        // moves appear once the chat is over
+  drawHUD();
+  if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
+  if(bossPhase==='intro') drawDialogue();
+  else if(dodgeWin>0) drawDodgePrompt();
+  else if(bossMsgT>0) drawBossMsg();
+}
+
+/* ----- classic (math) boss scene ----- */
 function drawBoss(){
+  if(bossMode==='duel'){ drawDuel(); return; }
   // stormy tint over the normal backdrop
   g.fillStyle='rgba(20,16,48,.38)'; g.fillRect(0,0,W,FLOOR_Y);
   drawBossSprite();
