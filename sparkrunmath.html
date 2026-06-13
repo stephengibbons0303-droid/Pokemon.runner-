@@ -49,8 +49,8 @@ const g  = cv.getContext('2d');
 const W = 960, H = 540;                 // fixed virtual resolution
 
 /* ---------- sprite sheets: Pikachu run cycle + jump ---------- */
-const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386 };
-pika.img.onload = ()=>{ pika.ready=true; };
+const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386, cnv:null };
+pika.img.onload = ()=>{ pika.cnv=cleanSheet(pika.img, pika.frames); pika.ready=true; };
 pika.img.src = 'pikachu-run.png';
 const PIKA_H = 120;                       // on-screen run height (px)
 const jump = { img:new Image(), ready:false, frames:4, cw:318, ch:265 };
@@ -122,6 +122,39 @@ function bossSprite(file){
 }
 // the drawable for a sprite: the cleaned canvas if we have it, else the raw image
 function spr2d(s){ return s ? (s.cnv||s.img) : null; }
+
+// A run/jump sheet is sliced into equal frames, but the source art lets each
+// Pokémon's tail spill across a cell boundary — so a frame ends up with a
+// detached scrap of its neighbour's tail. For every frame we keep only the
+// largest connected blob (the real body+tail) and clear the strays.
+function cleanSheet(img, frames){
+  try{
+    const w=img.width, h=img.height, fw=Math.floor(w/frames), CUT=40;
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const cx=c.getContext('2d'); cx.drawImage(img,0,0);
+    const id=cx.getImageData(0,0,w,h), d=id.data;
+    for(let f=0;f<frames;f++){
+      const x0=f*fw, x1=(f===frames-1)?w:x0+fw, fwid=x1-x0;
+      const lab=new Int32Array(fwid*h), sizes=[0], stack=[]; let cur=0;
+      const solid=(nx,ny)=> d[(ny*w+(x0+nx))*4+3] > CUT;
+      for(let y=0;y<h;y++) for(let x=0;x<fwid;x++){
+        const li=y*fwid+x;
+        if(lab[li] || !solid(x,y)) continue;
+        cur++; sizes[cur]=0; stack.length=0; stack.push(li); lab[li]=cur;
+        while(stack.length){
+          const k=stack.pop(); sizes[cur]++; const kx=k%fwid, ky=(k/fwid)|0;
+          if(kx+1<fwid){ const ni=k+1;    if(!lab[ni]&&solid(kx+1,ky)){ lab[ni]=cur; stack.push(ni); } }
+          if(kx-1>=0)  { const ni=k-1;    if(!lab[ni]&&solid(kx-1,ky)){ lab[ni]=cur; stack.push(ni); } }
+          if(ky+1<h)   { const ni=k+fwid; if(!lab[ni]&&solid(kx,ky+1)){ lab[ni]=cur; stack.push(ni); } }
+          if(ky-1>=0)  { const ni=k-fwid; if(!lab[ni]&&solid(kx,ky-1)){ lab[ni]=cur; stack.push(ni); } }
+        }
+      }
+      let best=1; for(let i=2;i<sizes.length;i++) if(sizes[i]>sizes[best]) best=i;
+      for(let y=0;y<h;y++) for(let x=0;x<fwid;x++){ const li=y*fwid+x; if(lab[li]&&lab[li]!==best) d[(y*w+(x0+x))*4+3]=0; }
+    }
+    cx.putImageData(id,0,0); return c;
+  }catch(e){ return null; }   // tainted canvas (e.g. file://) — fall back to the raw sheet
+}
 
 // Pikachu's move set — 2 at level 1, learn one more each level you clear.
 // unlock = level index the move becomes available; cost/gain feed the charge meter.
@@ -633,7 +666,8 @@ function drawCreature(x,y,mood){
   if(sheet.ready){
     if(mood==='oops'){ g.translate(x,feetY); g.rotate(0.12); g.translate(-x,-feetY); }
     g.imageSmoothingEnabled=true;
-    g.drawImage(sheet.img, frameIdx*sheet.cw,0,sheet.cw,sheet.ch, dx,dy,dw,dh);
+    const src=sheet.cnv||sheet.img, ins=1;        // cleaned sheet + 1px inset = no neighbour-frame bleed
+    g.drawImage(src, frameIdx*sheet.cw+ins,0,sheet.cw-2*ins,sheet.ch, dx,dy,dw,dh);
     if(mood==='oops'){ g.globalCompositeOperation='source-atop'; g.fillStyle='rgba(255,80,90,.30)'; g.fillRect(dx,dy,dw,dh); }
   } else {
     // simple placeholder while the sprite sheet loads
