@@ -187,10 +187,10 @@ function cleanSheet(img, frames){
 // unlock = level index the move becomes available; cost/gain feed the charge meter.
 const MAX_CHARGE = 6;
 const PIKA_MOVES = [
-  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
-  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
-  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit' },
-  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit' },
+  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
+  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
+  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit' },
+  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit' },
   { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:2, blurb:'Heavy slam' },
   { key:'cm', name:'Charm',        file:'pika_charm.png',       dmg:0, cost:0, gain:2, col:'#ff9ed6', unlock:3, blurb:'+2 charge' },
   { key:'rf', name:'Reflect',      file:'pika_reflect.png',     dmg:0, cost:1, gain:0, shield:2, col:'#b9a6ff', unlock:4, blurb:'Blocks 2 hits' },
@@ -1381,10 +1381,11 @@ function drawZaps(){
 
 /* ----- Pikachu move bar (bottom strip) + charge meter + attack FX ----- */
 function moveBarRects(){
-  const ms=availMoves(), n=ms.length, gap=8, margin=14, avail=W-2*margin;
-  const bw=Math.max(70, Math.min(150, (avail-(n-1)*gap)/n)), bh=44;
-  const tot=n*bw+(n-1)*gap; let x=W/2-tot/2; const y=H-48;
-  return ms.map(m=>{ const r={m,x,y,w:bw,h:bh}; x+=bw+gap; return r; });
+  // circular move buttons, centred along the bottom (x/y/w/h = the hit box around each circle)
+  const ms=availMoves(), n=ms.length, gap=14, margin=130, avail=W-2*margin;
+  const D=Math.max(58, Math.min(94, (avail-(n-1)*gap)/n));
+  const tot=n*D+(n-1)*gap; let x=W/2-tot/2; const cy=H-56;
+  return ms.map(m=>{ const r={m, x, y:cy-D/2, w:D, h:D, cx:x+D/2, cy, rad:D/2}; x+=D+gap; return r; });
 }
 function drawChargeGauge(x,y){
   g.textAlign='left'; g.textBaseline='middle';
@@ -1399,29 +1400,32 @@ function drawChargeGauge(x,y){
 }
 function drawMoveBar(){
   g.save();
-  drawChargeGauge(14, H-62);
+  drawChargeGauge(14, H-54);
   const eqm=curMove();                                   // equipped move readout (right)
   g.textAlign='right'; g.textBaseline='middle'; g.font='700 14px Fredoka, sans-serif';
-  g.fillStyle=eqm.col; g.fillText(eqm.name+'  ·  '+eqm.blurb, W-14, H-62);
+  g.fillStyle=eqm.col; g.fillText(eqm.name, W-14, H-54);
   for(const r of moveBarRects()){
-    const m=r.m, sel=(m.key===equipped), aff=canCast(m);
-    g.globalAlpha = aff?1:0.42;
-    g.fillStyle = sel?'rgba(46,30,68,.97)':'rgba(24,16,40,.88)'; rr(r.x,r.y,r.w,r.h,10); g.fill();
-    const spr=bossSprite(m.file);
-    g.save(); rr(r.x+3,r.y+3,r.w-6,r.h-6,7); g.clip();    // sprite thumbnail (cover)
-    if(spr&&spr.ready){ const im=spr2d(spr), s=Math.max((r.w-6)/im.width,(r.h-6)/im.height), iw=im.width*s, ih=im.height*s;
-      g.imageSmoothingEnabled=true; g.drawImage(im, r.x+3+((r.w-6)-iw)/2, r.y+3+((r.h-6)-ih)*0.28, iw, ih); }
-    g.fillStyle='rgba(0,0,0,.42)'; g.fillRect(r.x+3, r.y+r.h-18, r.w-6, 15);   // legibility strip
-    g.restore();
-    // effect (left) + cost (right) along the bottom
-    g.textBaseline='alphabetic'; g.font='700 12px Fredoka, sans-serif'; g.textAlign='left';
-    g.fillStyle='#fff';
-    g.fillText(m.dmg>0?('⚔ '+m.dmg):(m.shield?('🛡 '+m.shield):('＋'+m.gain)), r.x+7, r.y+r.h-6);
-    g.textAlign='right'; g.fillStyle=m.col; g.fillText(m.cost>0?('⚡'+m.cost):'free', r.x+r.w-7, r.y+r.h-6);
-    // border (selected glows; affordable moves get a soft tint)
-    g.textAlign='left';
-    g.lineWidth=sel?4:2; g.strokeStyle = sel?m.col:'rgba(255,255,255,.22)';
-    if(sel){ g.shadowColor=m.col; g.shadowBlur=12; } rr(r.x,r.y,r.w,r.h,10); g.stroke(); g.shadowBlur=0;
+    const m=r.m, sel=(m.key===equipped), aff=canCast(m), cx=r.cx, cy=r.cy, rad=r.rad;
+    g.globalAlpha = aff?1:0.4;
+    // base disc
+    g.beginPath(); g.arc(cx,cy,rad,0,7); g.fillStyle=sel?'rgba(48,32,72,.98)':'rgba(24,16,40,.9)'; g.fill();
+    // move image, fitted inside the circle
+    const spr=bossSprite(m.icon||m.file);
+    if(spr&&spr.ready){ const im=spr2d(spr);
+      g.save(); g.beginPath(); g.arc(cx,cy,rad-4,0,7); g.clip();
+      const s=Math.min((rad*2-10)/im.width,(rad*2-10)/im.height)*1.06, iw=im.width*s, ih=im.height*s;
+      g.imageSmoothingEnabled=true; g.drawImage(im, cx-iw/2, cy-ih/2, iw, ih);
+      g.restore();
+    }
+    // cost badge along the bottom of the disc
+    g.font='700 13px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    const badge=m.cost>0?('⚡'+m.cost):'FREE', bw=g.measureText(badge).width+14;
+    g.fillStyle='rgba(0,0,0,.62)'; rr(cx-bw/2, cy+rad-15, bw, 19, 9); g.fill();
+    g.fillStyle=m.cost>0?'#ffe14a':'#9af0c6'; g.fillText(badge, cx, cy+rad-5);
+    // ring (selected glows)
+    g.lineWidth=sel?5:3; g.strokeStyle=sel?m.col:'rgba(255,255,255,.30)';
+    if(sel){ g.shadowColor=m.col; g.shadowBlur=14; }
+    g.beginPath(); g.arc(cx,cy,rad,0,7); g.stroke(); g.shadowBlur=0;
     g.globalAlpha=1;
   }
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
