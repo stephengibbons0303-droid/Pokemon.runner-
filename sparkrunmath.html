@@ -81,10 +81,10 @@ const roll = { frames:[], n:4, loaded:0, ready:false, scale:0.58 };
 // animated special-move sequences (4-frame strips: prep → charge → launch → aftermath)
 // h = on-screen height of a cell; ax = how far left of Pikachu's x the cell is anchored
 const MOVE_SEQ = {
-  qa:{ file:'pika_seq_qa.png', cw:512, ch:261, h:196, ax:0.34 },
-  tb:{ file:'pika_seq_tb.png', cw:472, ch:342, h:236, ax:0.34 },
-  eb:{ file:'pika_seq_eb.png', cw:236, ch:188, h:178, ax:0.34 },
-  it:{ file:'pika_seq_it.png', cw:229, ch:146, h:150, ax:0.40 },
+  qa:{ file:'pika_seq_qa.png', cw:498, ch:241, h:186, ax:0.34 },
+  tb:{ file:'pika_seq_tb.png', cw:468, ch:331, h:230, ax:0.34 },
+  eb:{ file:'pika_seq_eb.png', cw:214, ch:173, h:172, ax:0.34 },
+  it:{ file:'pika_seq_it.png', cw:210, ch:132, h:146, ax:0.40 },
 };
 for(const k in MOVE_SEQ){ const s=MOVE_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 function moveSeq(m){ return m ? MOVE_SEQ[m.key] : null; }
