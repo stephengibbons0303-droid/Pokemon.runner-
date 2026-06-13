@@ -211,9 +211,9 @@ function crossfade(toFast){
 
 /* ============================================================
    MATHS — 5 levels on a gentle incremental ramp
-   L1 easy addition → L2 subtraction (bridging 10) →
-   L3 two-digit +/− (carry & borrow) → L4 times tables →
-   L5 harder tables + division facts.
+   L1 addition only → L2 subtraction only → L3 mix of + and − →
+   L4 multiplication only (2,5,10 then 3,4) →
+   L5 mix of +, −, × (× uses the hard tables 6,7,8,9).
    Every question stays a plain `a ○ b = ?` with an integer
    answer, so it fits the banner and the answer lanes.
    ============================================================ */
@@ -237,9 +237,11 @@ const LEVELS = [
     // L4 — times tables: start 2/5/10, widen to 3/4 later in the level
     gen:s=>{ const t = s<4 ? pick([2,5,10]) : pick([2,5,10,3,4]); const n=rnd(2,Math.min(12,5+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
   { name:'Star Summit',   theme:'crystal', count:10,
-    // L5 — harder tables (3,4,6,8) mixed with division facts
-    gen:s=>{ if(s%2===1){ const t=pick([3,4,6,8,2,5,10]), n=rnd(2,9); return {q:`${t*n} ÷ ${t}`, ans:n}; }
-             const t=pick([3,4,6,8]), n=rnd(2,Math.min(12,6+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
+    // L5 — mix of +, − and × ; the × uses the hard tables 6,7,8,9
+    gen:s=>{ const r=rnd(0,2);
+             if(r===0){ const a=rnd(15,30), b=rnd(10,25); return {q:`${a} + ${b}`, ans:a+b}; }
+             if(r===1){ const a=rnd(25,50), b=rnd(8,Math.min(a-5,24)); return {q:`${a} − ${b}`, ans:a-b}; }
+             const t=pick([6,7,8,9]), n=rnd(2,Math.min(12,6+s)); return {q:`${t} × ${n}`, ans:t*n}; } },
 ];
 
 function makeChoices(ans){
