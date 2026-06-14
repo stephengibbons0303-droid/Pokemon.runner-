@@ -26,10 +26,12 @@ _Last updated: 2026-06-14._
   after the apex still counts — forgiving for ages 6–8. Double-tap = double jump
   to the high lane; you can re-jump to re-time while a card approaches. The duel
   dodge-hop is unaffected (separate code path; `player.jumping` gates the arc).
-  Tuning knobs: `RISE_EASE 9`, `JUMP_HANG 0.44`, `JUMP_GRAV 3400`, `GRACE_T 0.26`,
-  and `CATCH_DROP 34` (shifts the lane thresholds toward the ground so the catch
-  area is bigger — a higher lane registers with less rise) — all first-pass,
-  expect to dial by feel on device.
+  Tuning knobs: `RISE_EASE 9`, `JUMP_HANG 0.44`, `JUMP_GRAV 3400`, `GRACE_T 0.26`.
+  The hit test is an **overlap of two bands**: the answer balloon
+  (`BALLOON_HALF`) vs Pikachu's catch band up his body (`PIKA_REACH_UP 52` /
+  `PIKA_REACH_DN 42`, since his y-anchor sits near his feet) — the highest
+  overlapping lane wins. Bigger reach = more forgiving. All first-pass, expect
+  to dial by feel on device.
 
 ### Scenery
 - Multi-layer parallax driven by one `world` scroll accumulator.

@@ -293,14 +293,20 @@ const RISE_EASE = 9;                       // eased-rise rate — lower = gentle
 const JUMP_HANG = 0.44;                    // seconds to hover at the apex before dropping ("a short time")
 const JUMP_GRAV = 3400;                    // downward acceleration (px/s²) — higher = steeper, snappier fall
 const GRACE_T   = 0.26;                    // scoring grace: how long the highest lane touched still counts
-// Which lane Pikachu counts as, from his y. The thresholds sit at the midpoints
-// between lane centres, then shift toward the ground by CATCH_DROP so the catch
-// area is generous: a higher lane registers with less rise and stays registered
-// longer through the arc (you don't have to be dead-centre on the balloon).
-const LANE_HI_MID = (LANE_Y[2]+LANE_Y[1])/2;   // 262: midpoint between high & mid centres
-const LANE_MID_LO = (LANE_Y[1]+LANE_Y[0])/2;   // 374: midpoint between mid & ground centres
-const CATCH_DROP  = 34;                          // bigger catch area — lower = stricter, higher = more forgiving
-function laneFromY(y){ return y<=LANE_HI_MID+CATCH_DROP ? 2 : (y<=LANE_MID_LO+CATCH_DROP ? 1 : 0); }
+// Which lane Pikachu counts as, from his y anchor. Rather than testing a single
+// point, we give him a vertical CATCH BAND (an area up his body, since his anchor
+// sits near his feet) and register the highest lane whose balloon band that catch
+// band overlaps — so much more of the character image counts as "contact".
+const BALLOON_HALF  = CARD_H/2;            // 50 — half the answer balloon's height
+const PIKA_REACH_UP = 52;                  // catch area above the anchor (toward head) — bigger = more forgiving
+const PIKA_REACH_DN = 42;                  // catch area below the anchor (toward feet) — keeps a lane registered longer on the way down
+function laneFromY(y){
+  for(let L=2; L>=1; L--){                  // prefer the higher lane on any overlap
+    const top=LANE_Y[L]-BALLOON_HALF, bot=LANE_Y[L]+BALLOON_HALF;
+    if(y-PIKA_REACH_UP <= bot && y+PIKA_REACH_DN >= top) return L;
+  }
+  return 0;                                 // no balloon overlap → ground lane
+}
 function liveLane(){ return laneFromY(player.y); }            // the lane Pikachu is at right now
 function scoreLane(){ return player.peakLane; }               // grace-tracked lane used to score the card
 const CARD_W = 122, CARD_H = 100;        // answer container size
