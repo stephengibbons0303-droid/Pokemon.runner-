@@ -12,9 +12,11 @@ Hosted via GitHub Pages.
 ## How to play
 
 - **Runner (levels 1–5):** the creature auto-runs and three answers float at the
-  ground / middle / high lanes. **Tap / Space / ↑** to hop up a lane
-  (ground → mid → high). Be in the lane of the correct answer when the gate
-  arrives. A correct answer scores; a wrong one costs a heart.
+  ground / middle / high lanes. **Tap / Space / ↑** to jump (tap twice to
+  double-jump to the high lane). The jump is a timed arc — rise, a brief hover,
+  then a steeper drop — so **time it to be at the correct answer's height when
+  the card reaches you** (a short grace window keeps it forgiving). A correct
+  answer scores; a wrong one costs a heart.
 - **Speed run:** a streak of 5 correct triggers a faster "Speed Run" — same
   question difficulty, just ~⅓ less time to think (×1.5 gate speed).
 - **Pause:** the ❚❚ button (top-left of the mute button), or **P / Esc**.

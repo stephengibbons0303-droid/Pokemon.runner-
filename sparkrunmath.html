@@ -285,12 +285,20 @@ function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move 
 const FLOOR_Y = 472;
 const LANE_Y  = [430, 318, 206];        // [ground, mid, high] = creature CENTER y
 const PLAYER_X = 232;                    // creature x (also the "choice line")
-// Jump trajectory feel: a springy eased rise, a brief float at the apex, then a
-// gravity-accelerated drop. The descent is asymmetric — steeper than the ascent
-// (as if drag bled off the climb but not the fall).
-const RISE_EASE = 11;                     // eased-rise rate toward a raised lane
-const JUMP_HANG = 0.16;                   // seconds to hover at the apex before dropping
-const JUMP_GRAV = 2800;                   // downward acceleration (px/s²) for the drop
+// Timed-jump feel: a tap launches a real arc — a springy eased rise, a brief
+// hover at the apex, then a gravity-accelerated drop. The descent is asymmetric
+// (steeper than the climb). Pikachu does NOT hold the lane: you must time the
+// jump so he is at the right height when the answer card reaches him.
+const RISE_EASE = 9;                       // eased-rise rate — lower = gentler / floatier climb
+const JUMP_HANG = 0.20;                    // seconds to hover at the apex before dropping ("a short time")
+const JUMP_GRAV = 3400;                    // downward acceleration (px/s²) — higher = steeper, snappier fall
+const GRACE_T   = 0.22;                    // scoring grace: how long the highest lane touched still counts
+// lane boundaries from a y position (midpoints between the three lane centres)
+const LANE_HI_MID = (LANE_Y[2]+LANE_Y[1])/2;   // 262: above this = high lane
+const LANE_MID_LO = (LANE_Y[1]+LANE_Y[0])/2;   // 374: above this = mid lane
+function laneFromY(y){ return y<=LANE_HI_MID ? 2 : (y<=LANE_MID_LO ? 1 : 0); }
+function liveLane(){ return laneFromY(player.y); }            // the lane Pikachu is at right now
+function scoreLane(){ return player.peakLane; }               // grace-tracked lane used to score the card
 const CARD_W = 122, CARD_H = 100;        // answer container size
 
 /* ---------- palette ---------- */
@@ -460,7 +468,8 @@ let prizes=[];              // collected sparks per level
 
 const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0, frameT:0, frame:0,
                  air:false, reachedApex:false, jumpT:0, jumpFrame:0,
-                 vy:0, hangT:0, gravFall:false };   // apex-hover timer + drop velocity for the asymmetric fall
+                 vy:0, hangT:0, jumping:false, descending:false,   // timed-jump arc state
+                 peakLane:0, peakT:0 };                            // highest lane touched recently (scoring grace)
 let gate=null;              // {x, choices:[..], correct, locked, result}
 let speed=120;             // px/sec the gate approaches (ramps)
 let trail=[];              // sparkle particles
@@ -512,11 +521,11 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0]; setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
-  player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0];
+  groundPlayer();
   spawnGate();
 }
 
@@ -528,7 +537,7 @@ function spawnGate(){
   const base=92 + levelIdx*16;
   speed = base + Math.min(90, stepInLvl*5);
   gate={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
-  player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
+  groundPlayer();
 }
 
 /* ============================================================
@@ -548,7 +557,7 @@ function enterBoss(){
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
-  player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
+  groundPlayer();
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
@@ -725,7 +734,7 @@ function bossAttack(){
   return bossCut.dur;
 }
 function spawnChallenge(){
-  player.lane=0; player.targetY=LANE_Y[0]; player.air=false; player.reachedApex=false;
+  groundPlayer();
   const L=LEVELS[levelIdx];
   // boss uses its own question style if defined, else the level's hardest stretch
   const {q,ans} = L.bossGen ? L.bossGen() : L.gen(rnd(Math.floor(L.count*0.6), L.count-1));
@@ -749,17 +758,31 @@ function bossDefeated(){
 /* ---------- input: tap = jump to mid lane, double-tap = double jump to high ----------
    Each tap raises one lane (ground→mid→high); she can't go past high until she lands.
    After the gate locks she falls back to the ground (apex pose held during the drop). */
+// drop everything back to a clean grounded state (start of run / level / question)
+function groundPlayer(){
+  player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0];
+  player.air=false; player.reachedApex=false; player.jumping=false; player.descending=false;
+  player.vy=0; player.hangT=0; player.jumpT=0; player.peakLane=0; player.peakT=0;
+}
+function landJump(){ groundPlayer(); }   // arc finished — back on the ground, ready to jump again
+
 function hop(){
   if(state==='menu'){ Audio8.startMusic(); startLevel(0); return; }
   if(state==='over'||state==='won'){ resetRun(); state='menu'; return; }
   if(state==='levelup'){ startLevel(levelIdx+1); return; }
-  // jumping applies to normal gates AND boss challenges
+  // timed jump — applies to normal gates AND classic boss challenges
   const active = state==='play' ? gate : (state==='boss' ? bossChal : null);
   if(!active || active.locked) return;
-  if(player.lane>=2) return;             // already at the highest lane
-  player.lane++;
+  if(!player.jumping || player.descending){      // on the ground or already falling → fresh hop to mid
+    player.lane=1;
+  } else if(player.lane<2){                        // mid-rise / mid-hover → double-jump to high
+    player.lane++;
+  } else {                                         // hovering at high → ignore (no infinite hover)
+    return;
+  }
   player.targetY=LANE_Y[player.lane];
-  player.air=true; player.reachedApex=false; player.jumpT=0;
+  player.air=true; player.jumping=true; player.descending=false;
+  player.reachedApex=false; player.jumpT=0; player.hangT=0; player.vy=0;
   Audio8.sfx('hop');
 }
 
@@ -853,37 +876,40 @@ function update(dt){
   player.frameT += dt*(running?12:7);
   player.frame = Math.floor(player.frameT)%pika.frames;
   if(player.moodT>0){ player.moodT-=dt; if(player.moodT<=0) player.mood='run'; }
-  // move the creature toward its lane height. Rising is a soft, springy ease;
-  // the answer-lane drop (gravFall) hovers briefly then accelerates down under
-  // gravity, so the descent is steeper than the climb. Other falls (duel dodge)
-  // keep the quick symmetric ease so dodging stays snappy.
-  if(player.targetY < player.y - 0.5){            // climbing to a raised lane
-    player.y += (player.targetY - player.y)*Math.min(1,dt*RISE_EASE);
-    player.vy=0; player.hangT=0;
-  } else if(player.targetY > player.y + 0.5){      // dropping back toward the ground
-    if(player.gravFall){
-      if(player.hangT < JUMP_HANG){ player.hangT += dt; }   // float at the apex first
-      else { player.vy += JUMP_GRAV*dt; player.y += player.vy*dt; }   // then accelerate down
-      if(player.y >= player.targetY){ player.y=player.targetY; player.vy=0; }
-    } else {
+  // vertical motion. A timed jump (player.jumping) is a real arc; other vertical
+  // moves (duel dodge-hop, settling) use a quick symmetric ease.
+  if(player.jumping){
+    // ----- timed jump arc: eased rise → brief apex hover → gravity fall (steeper than the rise) -----
+    if(!player.descending){
       player.y += (player.targetY - player.y)*Math.min(1,dt*RISE_EASE);
+      player.jumpT += dt*14;
+      player.jumpFrame = Math.min(jump.frames-2, Math.floor(player.jumpT));   // launch / rise frames
+      if(player.y - player.targetY < 4){                   // reached the top
+        player.reachedApex=true; player.jumpFrame=jump.frames-1;
+        player.hangT += dt;
+        if(player.hangT >= JUMP_HANG) player.descending=true;   // hover's over → start falling
+      }
+    } else {
+      player.jumpFrame=jump.frames-1;                      // hold the apex pose through the fall
+      player.vy += JUMP_GRAV*dt; player.y += player.vy*dt;
+      if(player.y >= LANE_Y[0]) landJump();                // back on the ground
     }
-  } else {                                         // settled in a lane
-    player.y=player.targetY; player.vy=0; player.hangT=0; player.gravFall=false;
+  } else {
+    // not jumping (duel dodge-hop return, idle settle): quick symmetric ease toward the target
+    player.y += (player.targetY - player.y)*Math.min(1,dt*RISE_EASE);
+    if(player.air){
+      if(player.targetY < LANE_Y[0]-1 && (player.y-player.targetY) < 10) player.reachedApex=true;       // dodge-hop peaked
+      if(player.targetY >= LANE_Y[0]-1 && (LANE_Y[0]-player.y) < 16){ player.air=false; player.reachedApex=false; }  // landed
+    }
   }
 
-  // ----- jump animation: rise through frames, then hold the apex pose -----
-  if(player.air){
-    const goingUp = player.targetY < LANE_Y[0]-1;          // climbing to a raised lane
-    if(!player.reachedApex){
-      player.jumpT += dt*14;
-      player.jumpFrame = Math.min(jump.frames-2, Math.floor(player.jumpT));   // 0..n-2 launch/rise
-      if(goingUp && (player.y - player.targetY) < 10) player.reachedApex=true; // hit the top
-    } else {
-      player.jumpFrame = jump.frames-1;                    // hold highest-point pose
-    }
-    // landed once she's almost back on the ground
-    if(!goingUp && (LANE_Y[0]-player.y) < 16){ player.air=false; player.reachedApex=false; }
+  // timed-jump scoring grace: remember the highest lane Pikachu touched recently, so a card
+  // arriving just after he leaves the apex still counts (forgiving for young players).
+  if(runState){
+    const ln=laneFromY(player.y);
+    if(ln>=player.peakLane){ player.peakLane=ln; player.peakT=GRACE_T; }
+    else if(player.peakT>0){ player.peakT-=dt; if(player.peakT<=0) player.peakLane=ln; }
+    else player.peakLane=ln;
   }
 
   // trail sparkles
@@ -903,12 +929,13 @@ function update(dt){
   if(state==='play' && gate){
     gate.x -= speed*speedMul*dt;
     if(!gate.locked && gate.x <= PLAYER_X){
-      // lock in the answer at the creature's lane
+      // lock in the answer at the lane Pikachu is actually at right now (timed jump)
       gate.locked=true;
-      const chosen=gate.choices[player.lane];
+      gate.pickLane=scoreLane();
+      const chosen=gate.choices[gate.pickLane];
       gate.result=(chosen===gate.ans);
       gate.resolveT=0.9;
-      player.targetY=LANE_Y[0]; player.gravFall=true;   // gate's passed — hover, then drop back to the ground
+      if(player.jumping) player.descending=true;        // card's passed — drop back to the ground
       if(gate.result){
         score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
         Audio8.sfx('good'); flash={a:0.42,col:'#c9ffe0'};
@@ -959,8 +986,9 @@ function update(dt){
     } else if(bossChal){
       bossChal.x -= bossSpeed*dt;
       if(!bossChal.locked && bossChal.x<=PLAYER_X){
-        bossChal.locked=true; bossChal.resolveT=0.7; player.targetY=LANE_Y[0]; player.gravFall=true;
-        bossChal.result=(player.lane===bossChal.correctLane);
+        bossChal.locked=true; bossChal.resolveT=0.7; if(player.jumping) player.descending=true;
+        bossChal.pickLane=scoreLane();
+        bossChal.result=(bossChal.pickLane===bossChal.correctLane);
         if(bossChal.result){
           let m=curMove(); if(!canCast(m)) m=PIKA_MOVES[0];        // safety fallback to Quick Attack
           charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
@@ -1262,9 +1290,9 @@ function drawHUD(){
     let hx=22, hy=(state==='boss')?52:H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
   }
 
-  // lane hint arrow on creature's active lane
+  // lane hint arrow at the creature's actual height (follows the jump arc)
   if(state==='play'){
-    g.fillStyle=C.glow; const ly=LANE_Y[player.lane];
+    g.fillStyle=C.glow; const ly=player.y;
     g.beginPath(); g.moveTo(PLAYER_X-70,ly); g.lineTo(PLAYER_X-54,ly-9); g.lineTo(PLAYER_X-54,ly+9); g.closePath(); g.fill();
   }
 
@@ -1509,9 +1537,9 @@ function drawBoss(){
       let reveal=null;
       if(bossChal.locked){
         if(lane===bossChal.correctLane) reveal='right';
-        else if(lane===player.lane && !bossChal.result) reveal='wrong';
+        else if(lane===bossChal.pickLane && !bossChal.result) reveal='wrong';
       }
-      drawCard(bossChal.x, y, bossChal.choices[lane], LEVELS[levelIdx].theme, !bossChal.locked&&lane===player.lane, reveal);
+      drawCard(bossChal.x, y, bossChal.choices[lane], LEVELS[levelIdx].theme, !bossChal.locked&&lane===liveLane(), reveal);
     }
   }
   // problem banner so the player can read the sum
@@ -1764,9 +1792,9 @@ function render(){
       let reveal=null;
       if(state==='resolve'){
         if(lane===gate.correctLane) reveal='right';
-        else if(lane===player.lane && !gate.result) reveal='wrong';
+        else if(lane===gate.pickLane && !gate.result) reveal='wrong';
       }
-      const selected=(state==='play'&&lane===player.lane);
+      const selected=(state==='play'&&lane===liveLane());
       drawCard(gate.x, y, gate.choices[lane], L.theme, selected, reveal);
     }
   }

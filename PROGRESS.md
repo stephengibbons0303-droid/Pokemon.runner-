@@ -17,10 +17,17 @@ _Last updated: 2026-06-14._
 - Speed run (×1.5, ⅓ less time) on a 5-streak — difficulty unchanged.
 - Wrong answer: dazed Pikachu wobble + dust/stars (`oopsPuff`).
 - Pause button + `P`/`Esc`; music pauses too.
-- **Asymmetric jump arc:** a soft eased rise, a brief hover at the apex
-  (`JUMP_HANG`), then a gravity-accelerated drop (`JUMP_GRAV`) so the descent is
-  steeper than the climb. Scoped to answer-lane landings (`gravFall`); duel
-  dodges keep the quick symmetric ease.
+- **Timed jump (skill).** A tap launches a real arc — gentle eased rise
+  (`RISE_EASE`) → brief apex hover (`JUMP_HANG`) → gravity-accelerated, steeper
+  fall (`JUMP_GRAV`). Pikachu no longer *holds* the lane: you must time the jump
+  so he's at the right height when the answer card reaches him. The pick is
+  scored from his actual height via a grace-tracked "highest lane touched
+  recently" (`scoreLane`/`peakLane`, window `GRACE_T`) so a card arriving just
+  after the apex still counts — forgiving for ages 6–8. Double-tap = double jump
+  to the high lane; you can re-jump to re-time while a card approaches. The duel
+  dodge-hop is unaffected (separate code path; `player.jumping` gates the arc).
+  Tuning knobs: `RISE_EASE 9`, `JUMP_HANG 0.20`, `JUMP_GRAV 3400`, `GRACE_T 0.22`
+  — all first-pass, expect to dial by feel on device.
 
 ### Scenery
 - Multi-layer parallax driven by one `world` scroll accumulator.
