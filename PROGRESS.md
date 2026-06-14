@@ -43,16 +43,22 @@ _Last updated: 2026-06-14._
   crystal cave, star summit. Snow-cap peaks, clouds, bubbles, crystals.
 - 8-bit post-pixelation was tried and **reverted** (caused scrolling shimmer).
 
-### Level 1 boss — Gyarados lair duel (no maths)
-- `bossMode='duel'` flag on `BOSSES[0]`; L2–L5 keep the classic scrolling-maths
-  boss untouched.
+### No-maths duels (config-driven)
+A boss becomes an action duel by setting `cfg.duel` (`'lake'` for Gyarados,
+`'dojo'` for Lucario); without it the level keeps the classic scrolling-maths
+boss. Scene, low-HP mechanic, dodge style, intro lines (`cfg.lines`), attack
+strips (`cfg.atkSeqs`) and the power-up strip (`cfg.powerSeq`) are all per-boss.
+L3–L5 are still classic.
+
+### Level 1 boss — Gyarados lair duel (`duel:'lake'`)
 - **Scene:** lake with a back basin + front surface so Gyarados sits **partly
   submerged**; he **rises out of the lake** on entry. Ash on the left bank,
   Pikachu beside him (crouched stance, not running).
-- **Scripted intro** (`buildIntro`/`tickIntro`): roar → Pikachu → Ash hey →
-  wanna-battle → Pikachu → Ash encouragement → **"Ready to battle?"** prompt.
-  Sounds are sequenced with gaps and channelled (no overlap). Tap skips the
-  cutscene to the prompt.
+- **Scripted intro** (`buildIntro`/`tickIntro`, generic): foe greets → Pikachu →
+  foe warns → Pikachu fires up → Ash encouragement → **"Ready to battle?"**
+  prompt. Each beat shows the matching `cfg.lines` line in a **dialogue box**
+  (`drawDuelSubtitle`, tinted by speaker). Sounds are sequenced with gaps and
+  channelled (no overlap). Tap skips the cutscene to the prompt.
 - **Energy bars** (0–100): Pikachu yellow (left), Gyarados blue (right); red at
   ≤10%. Hearts/charge meter hidden in the duel.
 - **Combat:** basic move = instant / 10% dmg; special = ~0.55s wind-up / 15%.
@@ -67,6 +73,22 @@ _Last updated: 2026-06-14._
   (`gyara_seq_*`). Ash poses (ready/point/punch) driven by battle beats.
 - Removed the drawn "serpent placeholder" — nothing draws until the real sprite
   loads.
+
+### Level 2 boss — Lucario dojo duel (`duel:'dojo'`)
+- **Scene** (`drawDojoBack`): a shoji-screen training hall — paper wall in a
+  dark-wood lattice, a rising-sun banner and two lanterns up top, a plank floor.
+  Lucario **stands** on the floor (`DOJO_DROP`, no water/submersion).
+- **Dodge:** instead of submerging he **sidesteps** (`boss.sideX`, ~28%) — a
+  quick lateral shift, left or right.
+- **Low-HP:** at ≤30% energy he uses **Swords Dance** once — power ×1.35, **no
+  heal** (an enrage, not a recover); plays the `luca_energy` clip and the Flash
+  Cannon strip as the flourish (`cfg.powerSeq`).
+- **Moves:** Aura Sphere / Flash Cannon / Dragon Pulse / Vacuum Wave animate from
+  `luca_seq_*` (extracted by `tools/extract_lucario.py`), cycled via `cfg.atkSeqs`.
+- **Voice:** `luca_growl` (intro/attacks), `luca_aura` (dodge/faint),
+  `luca_energy` (Swords Dance). **Lines:** aura-themed dojo challenge.
+- Shares all duel plumbing with Gyarados; differences are the four `cfg` fields
+  plus the `duel==='dojo'` branches in scene/dodge/low-HP.
 
 ### Audio
 - `Audio8` chiptune + `music.mp3`/`music2.mp3` (speed-run crossfade) +
@@ -106,8 +128,8 @@ _Last updated: 2026-06-14._
   image. Same for non-sequenced Pikachu moves (Electroweb, Charm, Reflect,
   G-Max) and the other bosses' moves — they animate only once 2×2 sheets are
   supplied.
-- **Other bosses (L2–L5)** are still the classic maths boss; no lair duels yet
-  (deferred by choice).
+- **Other bosses (L3–L5)** are still the classic maths boss; no duels yet
+  (deferred by choice). L1 (Gyarados) and L2 (Lucario) are action duels.
 - Possible: weight the speed-run move mix; mid-level checkpoint; per-level boss
   question styles for the classic bosses.
 

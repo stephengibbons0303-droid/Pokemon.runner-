@@ -151,6 +151,11 @@ const BOSS_SEQ = {
   'gyara_dragondance.png':{ file:'gyara_seq_dd.png', cw:477, ch:436 },
   'gyara_waterfall.png':  { file:'gyara_seq_wf.png', cw:228, ch:220 },
   'gyara_icefang.png':    { file:'gyara_seq_if.png', cw:445, ch:247 },
+  // Lucario move strips (4-frame sequences extracted from the supplied sheets)
+  'luca_aurasphere.png':  { file:'luca_seq_as.png', cw:312, ch:284 },
+  'luca_flashcannon.png': { file:'luca_seq_fc.png', cw:553, ch:335 },
+  'luca_dragonpulse.png': { file:'luca_seq_dp.png', cw:675, ch:362 },
+  'luca_vacuumwave.png':  { file:'luca_seq_vw.png', cw:417, ch:396 },
 };
 for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
@@ -160,6 +165,8 @@ const BOSSES = [
   { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0',
     duel:'lake',                                  // L1 uses the no-math lair duel (lake scene)
     roar:'gyara_roar.mp3', cry:'gyara_cry.mp3', roar2:'gyara_roar2.mp3',
+    atkSeqs:['gyara_waterfall.png','gyara_icefang.png'],   // specials cycled as attacks
+    powerSeq:'gyara_dragondance.png',                      // plays on the dive-recover power-up
     lines:[
       { who:'gyara', txt:'GRAAAH! Who disturbs my lake?' },
       { who:'pika',  txt:'Pika-pi! (We just want to pass!)' },
@@ -173,8 +180,18 @@ const BOSSES = [
       { name:'Ice Fang',     file:'gyara_icefang.png',     col:'#9fe0ff' },
     ] },
   { name:'Lucario',  file:'lucario.png',  hurtFile:'lucario_hurt.png', tint:'#3f6fd0',
-    // voice clips (used once the L2 dojo duel is wired): growl=intro/roar, aura=cry/faint, energy=Swords-Dance power-up
+    duel:'dojo',                                  // L2 uses the no-math dojo duel
+    // voice clips: growl=intro/roar, aura=cry/faint, energy=Swords-Dance power-up
     roar:'luca_growl.mp3', cry:'luca_aura.mp3', roar2:'luca_energy.mp3',
+    // his special-move strips, cycled as attacks; powerSeq plays on the Swords-Dance enrage
+    atkSeqs:['luca_aurasphere.png','luca_flashcannon.png','luca_dragonpulse.png','luca_vacuumwave.png'],
+    powerSeq:'luca_flashcannon.png',
+    lines:[
+      { who:'foe',  txt:'You carry a strong aura, Pikachu. Show me its limit.' },
+      { who:'pika', txt:'Pika-pi! (We accept your challenge!)' },
+      { who:'foe',  txt:'Then strike with everything. Aura knows no mercy.' },
+      { who:'pika', txt:'Pika! ⚡ (Let’s go, Ash!)' },
+    ],
     moves:[
       { name:'Aura Sphere',  file:'luca_aurasphere.png',  col:'#62e6b4' },
       { name:'Flash Cannon', file:'luca_flashcannon.png', col:'#ffe79a' },
@@ -501,6 +518,7 @@ let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX 
 let bossMode='classic';        // 'duel' = lair fight, else the classic scrolling-math boss
 let bossPhase='';              // duel: 'intro' (scripted) | 'battle'
 let introT=0, introIdx=0, introReady=false, introSteps=[];   // timed intro cutscene (sounds in sequence)
+let duelSub=null;              // current intro subtitle line {who,txt} from the boss's cfg.lines
 let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
@@ -533,7 +551,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; duelSub=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -564,8 +582,8 @@ function enterBoss(){
   bossMode = cfg.duel ? 'duel' : 'classic';
   const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
-         subY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false,
-         evade:null, atkKind:'basic', atkDmg:BASIC_DMG, atkSeq:null, atkN:0 };   // + special-move animation
+         subY:0, sideX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
+         evade:null, evadeDir:1, atkKind:'basic', atkDmg:BASIC_DMG, atkSeq:null, atkN:0 };   // + special-move animation
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
@@ -573,7 +591,7 @@ function enterBoss(){
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
-    boss.subY=190;                                            // starts submerged, rises during enter
+    boss.subY = (cfg.duel==='dojo') ? 0 : 190;                // lake foe starts submerged & rises; dojo foe just stands
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
     buildIntro(cfg);                                          // kick off the scripted intro (sounds in sequence)
@@ -592,28 +610,30 @@ const ASH_SPR={ ready:'ash_ready.png', point:'ash_point.png', punch:'ash_punch.p
 const ASH_X=108, ASH_H=176;
 let ashPose='ready', ashPoseT=0;
 function ashShow(pose,dur){ ashPose=pose; ashPoseT=dur; }   // momentary pose, reverts after dur
-// scripted intro: foe surfaces & roars → Pikachu → Ash greets/asks → Pikachu → Ash encourages → "Ready to battle?"
+// scripted intro driven by the boss's cfg.lines: foe greets → Pikachu → foe warns →
+// Pikachu fires up → Ash encourages → "Ready to battle?". Each beat shows a subtitle.
 function buildIntro(cfg){
-  const enc=pick([ASH_SPIRIT, ASH_BEST, ASH_COUNT]);
+  const L=cfg.lines||[], enc=pick([ASH_SPIRIT, ASH_BEST, ASH_COUNT]);
+  const sub=i=>{ duelSub = L[i] || null; };
+  const foe=v=>{ if(cfg.roar) voice(cfg.roar, v==null?0.9:v, 'foe'); };
   introSteps=[
-    { t:0.3, fn:()=>{ if(cfg.roar) voice(cfg.roar,0.95,'foe'); } },          // Gyarados surfaces & roars
-    { t:2.4, fn:()=>{ voice(PIKA_CRY,0.9,'pika'); } },                       // Pikachu responds
-    { t:3.7, fn:()=>{ ashSay(ASH_HEY); ashShow('point',1.0); } },           // Ash: "hey"
-    { t:4.9, fn:()=>{ ashSay(ASH_WANNA); ashShow('point',1.5); } },         // Ash: "wanna battle?"
-    { t:6.6, fn:()=>{ voice(PIKA_VOICE,0.9,'pika'); } },                     // Pikachu responds
-    { t:7.7, fn:()=>{ ashSay(enc); ashShow('point',1.7); } },               // Ash: encouragement
-    { t:9.2, fn:()=>{ introReady=true; } },                                 // → "Ready to battle?"
+    { t:0.3, fn:()=>{ foe(0.95); sub(0); ashShow('ready',0); } },                          // foe greets
+    { t:2.6, fn:()=>{ voice(PIKA_CRY,0.9,'pika'); sub(1); } },                              // Pikachu answers
+    { t:4.2, fn:()=>{ foe(0.8); sub(2); } },                                                // foe warns
+    { t:6.0, fn:()=>{ voice(PIKA_VOICE,0.9,'pika'); sub(3); ashShow('point',1.4); } },      // Pikachu fires up
+    { t:7.6, fn:()=>{ ashSay(enc); ashShow('point',1.7); duelSub=null; } },                 // Ash encourages
+    { t:9.0, fn:()=>{ introReady=true; } },                                                 // → "Ready to battle?"
   ];
-  introT=0; introIdx=0; introReady=false;
+  introT=0; introIdx=0; introReady=false; duelSub=null;
 }
 function tickIntro(dt){
   introT+=dt;
   while(introIdx<introSteps.length && introT>=introSteps[introIdx].t){ introSteps[introIdx].fn(); introIdx++; }
 }
-function skipIntro(){ introIdx=introSteps.length; introReady=true; }       // tap during the cutscene → jump to the prompt
+function skipIntro(){ introIdx=introSteps.length; introReady=true; duelSub=null; }   // tap during the cutscene → jump to the prompt
 function duelBegin(){
   if(bossPhase!=='intro') return;
-  bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
+  bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0; duelSub=null;
   voice(PIKA_CRY,0.9,'pika'); ashShow('point',1.4);
 }
 function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade; }   // hittable only when surfaced
@@ -630,9 +650,11 @@ function castMove(m){
 // resolve a Pikachu hit (after the wind-up for specials) — Gyarados may submerge to dodge
 function applyPikaHit(m){
   if(!canTarget()){ pikaFire(m); return; }            // he's already under → whiff
-  if(Math.random()<0.28){                             // submerge-dodge
-    boss.evade={t:0,dur:0.7}; if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
-    bossMsg=boss.cfg.name+' slips under!'; bossMsgT=1.0; pikaFire(m); return;
+  if(Math.random()<0.28){                             // dodge: step aside (dojo) or submerge (lake)
+    const dojo=boss.cfg.duel==='dojo';
+    boss.evade={t:0,dur:dojo?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
+    if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
+    bossMsg=boss.cfg.name+(dojo?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
   }
   boss.hp=Math.max(0, boss.hp-duelDmg(m)); boss.hurt=0.6;
   pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:0.32,col:m.col};
@@ -641,7 +663,6 @@ function applyPikaHit(m){
   bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
   if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
 }
-const BOSS_ATK_SEQS=['gyara_waterfall.png','gyara_icefang.png'];
 function foeAttack(){
   const special=Math.random()<0.4;                    // basic = quick/weaker, special = slower/stronger
   boss.atkKind=special?'special':'basic'; boss.atkDmg=special?SPECIAL_DMG:BASIC_DMG;
@@ -650,7 +671,8 @@ function foeAttack(){
   const windup=(special?1.5:0.85)/boss.power;
   dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.8:2.8)/boss.power;
   bossMsg=special?(boss.cfg.name+' charges a big attack!'):''; bossMsgT=special?1.0:0;
-  if(special){ const sq=BOSS_SEQ[BOSS_ATK_SEQS[boss.atkN++ % BOSS_ATK_SEQS.length]]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }   // animate the move
+  const atks=boss.cfg.atkSeqs||[];                     // animate the move from the boss's own strips
+  if(special && atks.length){ const sq=BOSS_SEQ[atks[boss.atkN++ % atks.length]]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }
 }
 // any of the 3 buttons dodges; direction just changes the motion (placeholder until a roll sheet lands)
 function doDodge(dir){
@@ -691,34 +713,47 @@ function updateDuel(dt){
   if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
   if(bossPhase!=='battle' || boss.defeated) return;
 
-  // --- Gyarados quick submerge-dodge dip (evading a Pikachu hit) ---
-  if(boss.evade){ boss.evade.t+=dt; boss.subY=Math.sin(Math.min(1,boss.evade.t/boss.evade.dur)*Math.PI)*150;
-    if(boss.evade.t>=boss.evade.dur){ boss.evade=null; boss.subY=0; } return; }
+  // --- quick dodge (evading a Pikachu hit): sidestep in the dojo, submerge at the lake ---
+  if(boss.evade){ boss.evade.t+=dt; const k=Math.sin(Math.min(1,boss.evade.t/boss.evade.dur)*Math.PI);
+    if(boss.cfg.duel==='dojo') boss.sideX=k*120*(boss.evadeDir||1); else boss.subY=k*150;
+    if(boss.evade.t>=boss.evade.dur){ boss.evade=null; boss.subY=0; boss.sideX=0; } return; }
 
-  // --- Gyarados dive → replenish → re-emerge stronger (once, when low on energy) ---
-  if(boss.diveState==='up' && boss.dives<1 && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
-    boss.diveState='diving'; boss.diveT=0; dodgeWin=0;
-    if(boss.cfg.cry) voice(boss.cfg.cry,0.7,'foe');
-    bossMsg=boss.cfg.name+' dives to recover!'; bossMsgT=1.6;
-  }
-  if(boss.diveState!=='up'){
-    boss.diveT+=dt;
-    if(boss.diveState==='diving'){
-      boss.subY=Math.min(170, boss.subY+dt*240);
-      if(boss.subY>=170){ boss.diveState='down'; boss.diveT=0; }
-    } else if(boss.diveState==='down'){
-      if(boss.diveT>=1.8){
-        boss.hp=Math.min(boss.maxHp, boss.hp+Math.round(boss.maxHp*0.45));   // replenish a bit
-        boss.dives++; boss.power=1.35; boss.diveState='rising'; boss.diveT=0;
-        if(boss.cfg.roar2) voice(boss.cfg.roar2,0.9,'foe');
-        const dd=BOSS_SEQ['gyara_dragondance.png']; if(dd) boss.atkSeq={seq:dd,t:0,dur:1.2};   // power-up animation
-        bossMsg=boss.cfg.name+' surges back stronger!'; bossMsgT=1.8;
-      }
-    } else if(boss.diveState==='rising'){
-      boss.subY=Math.max(0, boss.subY-dt*210);
-      if(boss.subY<=0){ boss.diveState='up'; foeTimer=1.6; }
+  if(boss.cfg.duel==='dojo'){
+    // --- Swords Dance: a one-time enrage at low energy (powers up, no heal) ---
+    if(!boss.enraged && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
+      boss.enraged=true; boss.power=1.35;
+      if(boss.cfg.roar2) voice(boss.cfg.roar2,0.95,'foe');
+      flash={a:0.5,col:'#ffd23a'};
+      const ps=boss.cfg.powerSeq&&BOSS_SEQ[boss.cfg.powerSeq]; if(ps) boss.atkSeq={seq:ps,t:0,dur:1.2};
+      bossMsg=boss.cfg.name+' raises its aura — Swords Dance!'; bossMsgT=1.8;
+      foeTimer=Math.max(foeTimer,1.3);
     }
-    return;   // no normal attacks while he's submerged
+  } else {
+    // --- Gyarados dive → replenish → re-emerge stronger (once, when low on energy) ---
+    if(boss.diveState==='up' && boss.dives<1 && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
+      boss.diveState='diving'; boss.diveT=0; dodgeWin=0;
+      if(boss.cfg.cry) voice(boss.cfg.cry,0.7,'foe');
+      bossMsg=boss.cfg.name+' dives to recover!'; bossMsgT=1.6;
+    }
+    if(boss.diveState!=='up'){
+      boss.diveT+=dt;
+      if(boss.diveState==='diving'){
+        boss.subY=Math.min(170, boss.subY+dt*240);
+        if(boss.subY>=170){ boss.diveState='down'; boss.diveT=0; }
+      } else if(boss.diveState==='down'){
+        if(boss.diveT>=1.8){
+          boss.hp=Math.min(boss.maxHp, boss.hp+Math.round(boss.maxHp*0.45));   // replenish a bit
+          boss.dives++; boss.power=1.35; boss.diveState='rising'; boss.diveT=0;
+          if(boss.cfg.roar2) voice(boss.cfg.roar2,0.9,'foe');
+          const ps=boss.cfg.powerSeq&&BOSS_SEQ[boss.cfg.powerSeq]; if(ps) boss.atkSeq={seq:ps,t:0,dur:1.2};   // power-up animation
+          bossMsg=boss.cfg.name+' surges back stronger!'; bossMsgT=1.8;
+        }
+      } else if(boss.diveState==='rising'){
+        boss.subY=Math.max(0, boss.subY-dt*210);
+        if(boss.subY<=0){ boss.diveState='up'; foeTimer=1.6; }
+      }
+      return;   // no normal attacks while he's submerged
+    }
   }
 
   // --- normal attack cadence + dodge window ---
@@ -985,7 +1020,7 @@ function update(dt){
       if(boss.deadT>=1.8) bossDefeated();
     } else if(boss.enter>0){
       boss.enter-=dt;
-      if(bossMode==='duel') boss.subY=Math.max(0,(boss.enter/1.2))*190;   // rises up out of the lake
+      if(bossMode==='duel' && boss.cfg.duel!=='dojo') boss.subY=Math.max(0,(boss.enter/1.2))*190;   // lake: rises up out of the water
       if(boss.enter<=0 && bossMode==='classic') spawnChallenge();   // classic boss: start the math gates
     } else if(bossMode==='duel'){
       updateDuel(dt);                          // lair duel: dialogue then move-vs-dodge
@@ -1414,10 +1449,47 @@ function drawLakeFront(){
   g.fillStyle='rgba(255,255,255,.10)'; g.fillRect(LAKE.x-LAKE.rx, LAKE.cy-LAKE.ry, LAKE.rx*2, 3);   // surface glint line
   g.restore();
 }
+/* ----- Lucario dojo duel scene (no maths) -----
+   A shoji-screen training hall: paper back wall in a wood lattice, a banner
+   emblem and lanterns up top, a plank floor the foe stands on. Drawn over the
+   meadow backdrop (like the lake scene), fully covering it. */
+function drawDojoBack(){
+  const wallTop=46, wallBot=FLOOR_Y-4, panelW=W/8, midY=(wallTop+wallBot)/2;
+  g.save();
+  g.fillStyle='rgba(30,18,40,.42)'; g.fillRect(0,0,W,FLOOR_Y);                 // dusk dojo mood over the meadow
+  // shoji back wall: warm paper in a dark-wood lattice
+  g.fillStyle='#e7dabb'; g.fillRect(0,wallTop,W,wallBot-wallTop);             // paper
+  g.fillStyle='rgba(255,226,160,.12)'; g.fillRect(0,wallTop,W,(wallBot-wallTop)*0.5);  // soft top glow
+  g.strokeStyle='#5a3a24'; g.lineWidth=6;
+  g.beginPath(); g.moveTo(0,wallTop); g.lineTo(W,wallTop); g.moveTo(0,wallBot); g.lineTo(W,wallBot); g.stroke();
+  g.lineWidth=4;
+  for(let i=0;i<=8;i++){ const x=i*panelW; g.beginPath(); g.moveTo(x,wallTop); g.lineTo(x,wallBot); g.stroke(); }
+  g.lineWidth=3; g.beginPath(); g.moveTo(0,midY); g.lineTo(W,midY); g.stroke();
+  // hanging banner with a rising-sun emblem, centred up top
+  g.fillStyle='#7a1a22'; g.fillRect(W/2-70,wallTop,140,88);
+  g.fillStyle='#b8323a'; g.fillRect(W/2-62,wallTop+6,124,74);
+  g.fillStyle='#ffe8c0'; g.beginPath(); g.arc(W/2,wallTop+43,22,0,7); g.fill();
+  // paper lanterns flanking the banner
+  for(const lx of [W*0.16, W*0.84]){
+    g.strokeStyle='#3a2414'; g.lineWidth=3; g.beginPath(); g.moveTo(lx,wallTop); g.lineTo(lx,wallTop+22); g.stroke();
+    g.fillStyle='#d8472e'; g.beginPath(); g.ellipse(lx,wallTop+46,20,26,0,0,7); g.fill();
+    g.fillStyle='rgba(255,210,120,.55)'; g.beginPath(); g.ellipse(lx,wallTop+42,9,16,0,0,7); g.fill();
+    g.fillStyle='#2a1a0e'; g.fillRect(lx-20,wallTop+44,40,3);
+  }
+  // wooden plank floor the foe stands on
+  g.fillStyle='#7a4a28'; g.fillRect(0,wallBot,W,H-wallBot);
+  g.strokeStyle='rgba(0,0,0,.20)'; g.lineWidth=2;
+  for(let i=1;i<8;i++){ const x=i*W/8 + (i%2)*28; g.beginPath(); g.moveTo(x,wallBot); g.lineTo(x+40,H); g.stroke(); }
+  g.strokeStyle='rgba(255,220,160,.10)'; g.beginPath(); g.moveTo(0,wallBot+3); g.lineTo(W,wallBot+3); g.stroke();
+  g.restore();
+}
 function drawDodgeWave(){
+  const dojo = boss.cfg.duel==='dojo';
   const p=1-Math.max(0,dodgeWin/dodgeMax);            // wave sweeps from the foe toward Pikachu
   const x=(BOSS_X-70) + ((PLAYER_X+30)-(BOSS_X-70))*p;
-  g.save(); g.fillStyle='rgba(130,205,255,.75)'; g.strokeStyle='rgba(255,255,255,.8)'; g.lineWidth=3;
+  g.save();
+  g.fillStyle=dojo?'rgba(150,225,255,.72)':'rgba(130,205,255,.75)';   // dojo: an aura shockwave
+  g.strokeStyle='rgba(255,255,255,.8)'; g.lineWidth=3;
   g.beginPath(); g.moveTo(x+40,FLOOR_Y);
   for(let k=0;k<=8;k++){ const xx=x+40-k*12, yy=FLOOR_Y-18-Math.sin(k*0.9+world*0.05)*14-k*2; g.lineTo(xx,yy); }
   g.lineTo(x-60,FLOOR_Y); g.closePath(); g.fill(); g.stroke();
@@ -1440,6 +1512,23 @@ function drawDuelIntro(){
     g.globalAlpha=0.5; g.font='600 16px Fredoka, sans-serif'; g.fillStyle=C.cream;
     g.fillText('(tap to skip)', W/2, H-26);
   }
+  g.restore(); g.textAlign='left';
+  if(!introReady) drawDuelSubtitle();      // the current scripted line, as a dialogue box
+}
+// a dialogue box for the intro line: speaker name + text, tinted by who's talking
+function drawDuelSubtitle(){
+  if(!duelSub) return;
+  const pika = duelSub.who==='pika', who = pika ? 'Pikachu' : (boss.cfg.name||'Foe');
+  const col = pika ? '#ffe14a' : '#9fd8ff', txt=duelSub.txt, y=H-96;
+  g.save();
+  g.font='600 20px Fredoka, sans-serif';
+  const w=Math.min(W-72, g.measureText(txt).width+64), x=W/2;
+  g.fillStyle='rgba(16,12,30,.88)'; rr(x-w/2, y-28, w, 70, 14); g.fill();
+  g.strokeStyle=col; g.lineWidth=2.5; rr(x-w/2, y-28, w, 70, 14); g.stroke();
+  g.fillStyle=col; g.font='700 13px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='alphabetic';
+  g.fillText(who.toUpperCase(), x-w/2+18, y-8);
+  g.fillStyle='#fff'; g.font='600 20px Fredoka, sans-serif'; g.textAlign='center';
+  g.fillText(txt, x, y+24);
   g.restore(); g.textAlign='left';
 }
 function drawDodgePrompt(){
@@ -1481,9 +1570,14 @@ function drawDuelBars(){
   drawEnergyBar(W-316, 60, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
 }
 function drawDuel(){
-  drawLairBack();
-  drawBossSprite();
-  drawLakeFront();          // water in front of his lower body → partly submerged
+  if(boss.cfg.duel==='dojo'){
+    drawDojoBack();
+    drawBossSprite();       // dojo foe stands on the floor (no water overlay)
+  } else {
+    drawLairBack();
+    drawBossSprite();
+    drawLakeFront();        // water in front of his lower body → partly submerged
+  }
   if(dodgeWin>0) drawDodgeWave();
   drawZaps();
   drawAsh();                // trainer on the bank
@@ -1603,12 +1697,14 @@ function drawBossCutIn(){
   g.textAlign='left'; g.textBaseline='alphabetic'; g.restore();
 }
 
-const DUEL_DROP=114;            // lower Gyarados so he sits in the lake (duel only)
+const DUEL_DROP=114;            // lower Gyarados so he sits in the lake (lake duel only)
+const DOJO_DROP=100;            // stand the foe on the dojo floor (dojo duel only)
 function drawBossSprite(){
-  const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises from the lake instead of sliding
+  const dojo = bossMode==='duel' && boss.cfg.duel==='dojo';
+  const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises/stands instead of sliding
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : 0;
-  const drop = (bossMode==='duel') ? DUEL_DROP + (boss.subY||0) : 0;   // duel: lowered + dive submersion
-  const cx=BOSS_X+slide+shake, cy=BOSS_Y+drop+Math.sin(boss.bob)*10;
+  const drop = (bossMode==='duel') ? (dojo ? DOJO_DROP : DUEL_DROP + (boss.subY||0)) : 0;   // lake: lowered + submersion; dojo: stands
+  const cx=BOSS_X+slide+shake+(boss.sideX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*10;   // dojo sidestep shifts x
   let alpha=1, rot=0, sink=0;
   if(boss.defeated){ const p=Math.min(1,boss.deadT/1.8); alpha=1-p*0.9; rot=p*0.7; sink=p*150; }
   // swap to the aggressive reaction pose while flinching or attacking

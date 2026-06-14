@@ -38,14 +38,16 @@ level (per `LEVELS` in the source):
 Answers are shown across three lanes with the correct one in a **uniformly
 random** lane.
 
-## The Level 1 boss — Gyarados lair duel (no maths)
+## The no-maths boss duels (Levels 1 & 2)
 
-Level 1's boss is a bespoke **action duel** (the other levels still use a
-classic scrolling-maths boss). Flow:
+Levels 1 and 2 cap with a bespoke **action duel** instead of a maths boss
+(Levels 3–5 still use the classic scrolling-maths boss). A boss opts in via
+`cfg.duel` — `'lake'` (Gyarados) or `'dojo'` (Lucario) — and the scene, intro
+lines, dodge style and low-HP mechanic vary per boss. Flow:
 
-1. **Scripted intro** (`buildIntro`): Gyarados surfaces from the lake and roars
-   → Pikachu responds → Ash: "Hey" → "Wanna battle?" → Pikachu responds → Ash
-   encouragement → **"Ready to battle?"** prompt. Tap mid-cutscene to skip to the
+1. **Scripted intro** (`buildIntro`): the foe greets → Pikachu responds → the
+   foe warns → Pikachu fires up → Ash encouragement → **"Ready to battle?"**
+   prompt. Each line shows in a dialogue box. Tap mid-cutscene to skip to the
    prompt; tap the prompt to start.
 2. **Battle:** no questions. Energy bars for both (Pikachu yellow top-left,
    Gyarados blue top-right; red at ≤10%).
@@ -53,16 +55,19 @@ classic scrolling-maths boss). Flow:
      (Quick Attack) fires instantly for 10%; **special** (Thunderbolt, Electro
      Ball, …) has a short wind-up for 15%. Pikachu's moves play 4-frame
      animations.
-   - **Dodge:** when Gyarados winds up, three arrows appear — **◀ roll back /
+   - **Dodge:** when the foe winds up, three arrows appear — **◀ roll back /
      ▲ jump / ▶ roll forward** (any one dodges; keyboard **←/→/↑**). A missed
      dodge costs energy.
-   - **Gyarados** can **submerge-dodge** a hit, and at low HP **dives to
-     replenish and re-emerge stronger** (plays Dragon Dance). Pikachu at low
+   - **Per-boss tricks:** **Gyarados** (lake) can **submerge-dodge** a hit, and
+     at low HP **dives to replenish and re-emerge stronger** (Dragon Dance).
+     **Lucario** (dojo) instead **sidesteps** to dodge, and at low HP uses
+     **Swords Dance** — a one-time enrage (power up, no heal). Pikachu at low
      energy gets an **angry rile-up** that restores some bar.
-   - Ash coaches on the bank (pose + voice on key beats).
+   - Ash coaches from the side (pose + voice on key beats).
 
 Cast: Ash (4 poses), Pikachu (run / jump / roll / 4 move sequences), Gyarados
-(idle + Dragon Dance / Waterfall / Ice Fang sequences).
+(idle + Dragon Dance / Waterfall / Ice Fang sequences), Lucario (idle/hurt +
+Aura Sphere / Flash Cannon / Dragon Pulse / Vacuum Wave sequences).
 
 ## Controls summary
 
