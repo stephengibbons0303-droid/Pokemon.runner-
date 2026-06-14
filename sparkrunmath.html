@@ -738,6 +738,13 @@ function hop(){
 const MUTE={x:W-58,y:18,w:40,h:40};
 const PAUSE={x:W-106,y:18,w:40,h:40};                          // pause toggle, left of mute
 const RESUME={x:W/2-150,y:H/2+20,w:300,h:64};                  // big resume button on the pause overlay
+// Size the top-corner pause/mute buttons to the physical-tap floor (capped so
+// they stay tidy in the HUD) and re-anchor them from the top-right each frame.
+function layoutTopButtons(){
+  const D=Math.max(40, Math.min(60, MIN_TAP_CSS/RENDER_SCALE)), pad=18, gap=8;
+  MUTE.w=MUTE.h=D;   MUTE.x=W-pad-D;        MUTE.y=pad;
+  PAUSE.w=PAUSE.h=D; PAUSE.x=MUTE.x-gap-D;  PAUSE.y=pad;
+}
 function pointInMute(px,py){ return px>=MUTE.x&&px<=MUTE.x+MUTE.w&&py>=MUTE.y&&py<=MUTE.y+MUTE.h; }
 function pointInRect(r,px,py){ return px>=r.x&&px<=r.x+r.w&&py>=r.y&&py<=r.y+r.h; }
 function inGameplay(){ return state==='play'||state==='resolve'||state==='boss'; }
@@ -1232,13 +1239,14 @@ function drawHUD(){
     g.beginPath(); g.moveTo(PLAYER_X-70,ly); g.lineTo(PLAYER_X-54,ly-9); g.lineTo(PLAYER_X-54,ly+9); g.closePath(); g.fill();
   }
 
+  const k=MUTE.w/40;                                   // scale icons/corners with the button size
   // pause button (left of mute) — only while playing
-  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(PAUSE.x,PAUSE.y,PAUSE.w,PAUSE.h,12); g.fill();
-  g.fillStyle=C.cream; g.font='18px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(PAUSE.x,PAUSE.y,PAUSE.w,PAUSE.h,12*k); g.fill();
+  g.fillStyle=C.cream; g.font=Math.round(18*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
   g.fillText(paused?'▶':'❚❚', PAUSE.x+PAUSE.w/2, PAUSE.y+PAUSE.h/2+1); g.restore();
   // mute button
-  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12); g.fill();
-  g.fillStyle=C.cream; g.font='20px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12*k); g.fill();
+  g.fillStyle=C.cream; g.font=Math.round(20*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
   g.fillText(Audio8.isMuted()?'🔇':'🔊', MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
 }
 
@@ -1762,8 +1770,9 @@ function drawSpeedBanner(){
   g.restore(); g.textAlign='left';
 }
 function drawMuteOnly(){
-  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12); g.fill();
-  g.fillStyle=C.cream; g.font='20px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  const k=MUTE.w/40;
+  g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12*k); g.fill();
+  g.fillStyle=C.cream; g.font=Math.round(20*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
   g.fillText(Audio8.isMuted()?'🔇':'🔊', MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
 }
 
@@ -1772,7 +1781,7 @@ function drawMuteOnly(){
    ============================================================ */
 function frame(now){
   let dt=(now-lastT)/1000; lastT=now; if(dt>0.05) dt=0.05;
-  updateRenderScale();                  // keep the touch-control size floor matched to the live canvas size
+  updateRenderScale(); layoutTopButtons();   // keep the touch-control size floor matched to the live canvas size
   update(dt); render();
   if(paused) drawPause();             // overlay rides on top of the frozen frame
   requestAnimationFrame(frame);

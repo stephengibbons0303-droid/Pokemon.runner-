@@ -63,7 +63,9 @@ _Last updated: 2026-06-14._
   enforces a ~46 CSS-px physical-tap floor (via a live `RENDER_SCALE`) and
   `bottomRightRow` anchors both clusters in the bottom-right thumb-zone (dodge
   arrows and the move bar are mutually exclusive, so they share the zone and the
-  thumb doesn't travel). Button text scales with radius. Still needs **real
+  thumb doesn't travel). The top-corner pause/mute buttons scale to the same
+  floor too (`layoutTopButtons`, capped to stay tidy). Button text scales with
+  radius. Still needs **real
   hardware play-testing** to confirm reach/size feel; revisit the floor (46px),
   edge pad (`CTRL_PAD`), and zone widths (`W*0.6` / `W*0.74`) from there.
 - **Balance tuning** (all first-pass, untested): energy 100 each; dmg 10/15;
