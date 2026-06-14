@@ -62,12 +62,14 @@ _Last updated: 2026-06-14._
   image. Same for non-sequenced Pikachu moves (Charm, Reflect, G-Max) — they
   animate only once 2×2 sheets are supplied.
 - **L3–L5 duels** not built (deferred by choice); L3–L5 bosses are classic maths.
-- **L3–L5 question pools** — could get the same curated 3-stage treatment as
-  L1/L2 if sets are supplied.
+- **L4–L5 question pools** — could get the same curated 3-stage treatment as
+  L1–L3 once sets are supplied (L4 is currently still procedural × — overlaps L3,
+  so it likely needs redefining; L5 is the procedural +/−/× mix).
 - Possible: weight the speed-run move mix; mid-level checkpoint.
 
 ## Layout quick-reference (in `sparkrunmath.html`)
-- Maths generators: `LEVELS`, `L1_POOLS`/`L2_POOLS`, `drawQ`/`QBAG`, `makeChoices`.
+- Maths generators: `LEVELS`, `L1_POOLS`/`L2_POOLS`/`L3_POOLS`, `drawQ`/`QBAG`,
+  `makeChoices`.
 - Scenery: `SCENES`, `drawBackground` and its layer helpers.
 - Moves: `PIKA_MOVES`, `MOVE_SEQ`; bosses `BOSSES`, `BOSS_SEQ`.
 - Duel logic: `enterBoss`, `buildIntro`/`tickIntro`, `castMove`/`applyPikaHit`,
