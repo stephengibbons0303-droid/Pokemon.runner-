@@ -78,6 +78,12 @@ _Last updated: 2026-06-14._
   (Fullscreen API). Purely for testing in a mobile browser; auto-hidden when the
   API is unsupported or when running as an installed PWA (`display-mode:
   standalone`). Refreshes `RENDER_SCALE` on `fullscreenchange`.
+- **`tools/selftest.js`** — headless guard. Run `node tools/selftest.js` before
+  pushing gameplay / load-order changes. It (1) *executes* the inline script
+  under DOM/canvas/Audio stubs to catch load-time errors a plain parse misses
+  (e.g. const used-before-init), and (2) drives the real `update()` loop to
+  assert the scoring rule holds (timed jump onto the correct balloon scores;
+  never-jumping for a raised lane misses). Exit 0 = pass, 1 = fail.
 
 ## Open items / TODO
 - **Tablet test pass (on-device)** — the controls now scale: `rowDiameter`
