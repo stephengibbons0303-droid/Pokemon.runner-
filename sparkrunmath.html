@@ -48,6 +48,35 @@ const cv = document.getElementById('game');
 const g  = cv.getContext('2d');
 const W = 960, H = 540;                 // fixed virtual resolution
 
+// ---------- responsive touch controls ----------
+// The canvas renders at a fixed 960×540 and is letterboxed to fit (object-fit:
+// contain), so on small / oddly-shaped tablets the drawn buttons can fall below
+// a comfortable physical tap size. We track the live CSS-px-per-canvas-unit
+// scale and inflate button diameters to honour a physical-pixel floor, while
+// keeping the clusters anchored in the bottom-right thumb-zone and clamped to
+// fit the available width. The rect generators below feed BOTH drawing and
+// hit-testing, so layout and input stay in lock-step.
+let RENDER_SCALE = 1;                    // CSS pixels per canvas unit
+function updateRenderScale(){ const r=cv.getBoundingClientRect(); if(r.width>0) RENDER_SCALE=r.width/W; }
+addEventListener('resize', updateRenderScale);
+addEventListener('orientationchange', ()=>setTimeout(updateRenderScale,200));
+updateRenderScale();
+const MIN_TAP_CSS = 46;                  // smallest comfortable touch target (CSS px)
+const CTRL_PAD = 22;                     // gap from the canvas edges (canvas units)
+// Pick a button diameter for a row of n circles: at least the design size, grown
+// toward the physical-tap floor, but clamped so the whole row still fits `avail`.
+function rowDiameter(n, gap, baseD, avail){
+  const D=Math.max(baseD, MIN_TAP_CSS/RENDER_SCALE);   // honour the physical floor
+  const maxD=(avail-(n-1)*gap)/n;                       // largest that still fits the row
+  return Math.max(46, Math.min(D, maxD));
+}
+// Lay n circles out as a row hugging the bottom-right corner, growing leftward.
+function bottomRightRow(n, D, gap){
+  const cy=H-CTRL_PAD-D/2, tot=n*D+(n-1)*gap; let x=W-CTRL_PAD-tot;
+  const out=[]; for(let i=0;i<n;i++){ out.push({cx:x+D/2, cy, rad:D/2, x, y:cy-D/2, w:D, h:D}); x+=D+gap; }
+  return out;
+}
+
 // offscreen buffer for isolated sprite tinting
 const tintBuf=document.createElement('canvas'); const tg=tintBuf.getContext('2d');
 // draw a sprite region with a red tint that sticks to the sprite's own pixels
@@ -586,8 +615,9 @@ function doDodge(dir){
 // big directional dodge buttons, shown only during the wind-up window
 function dodgeBtnRects(){
   const items=[['back','◀'],['up','▲'],['fwd','▶']];
-  const D=100, gap=46, cy=H-126, tot=3*D+2*gap; let x=W/2-tot/2;
-  return items.map(([dir,glyph])=>{ const r={dir,glyph,x,y:cy-D/2,w:D,h:D,cx:x+D/2,cy,rad:D/2}; x+=D+gap; return r; });
+  const gap=18, D=rowDiameter(items.length, gap, 100, W*0.6);   // bottom-right thumb-zone
+  const slots=bottomRightRow(items.length, D, gap);
+  return items.map((it,i)=>Object.assign({dir:it[0], glyph:it[1]}, slots[i]));
 }
 // Pikachu nearly out of energy → angry surge that replenishes some of his bar
 function rileUp(){
@@ -1416,14 +1446,15 @@ function drawRoll(x,y){
 function drawDodgeButtons(){
   const pulse=0.6+0.4*Math.sin(performance.now()/100);
   for(const r of dodgeBtnRects()){
+    const k=r.rad/50;                                    // scale glyph/label with the button size
     g.save();
     g.beginPath(); g.arc(r.cx,r.cy,r.rad,0,7); g.fillStyle='rgba(20,14,36,.92)'; g.fill();
     g.lineWidth=4; g.strokeStyle='#9fd8ff'; g.shadowColor='#9fd8ff'; g.shadowBlur=14*pulse;
     g.beginPath(); g.arc(r.cx,r.cy,r.rad,0,7); g.stroke(); g.shadowBlur=0;
-    g.fillStyle='#fff'; g.font='700 52px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(r.glyph, r.cx, r.cy-4);
-    g.font='700 14px Fredoka, sans-serif'; g.fillStyle='#cfe6ff';
-    g.fillText(r.dir==='up'?'JUMP':'ROLL', r.cx, r.cy+r.rad-16);
+    g.fillStyle='#fff'; g.font='700 '+Math.round(52*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(r.glyph, r.cx, r.cy-4*k);
+    g.font='700 '+Math.round(14*k)+'px Fredoka, sans-serif'; g.fillStyle='#cfe6ff';
+    g.fillText(r.dir==='up'?'JUMP':'ROLL', r.cx, r.cy+r.rad-16*k);
     g.restore();
   }
 }
@@ -1572,11 +1603,11 @@ function drawZaps(){
 
 /* ----- Pikachu move bar (bottom strip) + charge meter + attack FX ----- */
 function moveBarRects(){
-  // circular move buttons, centred along the bottom (x/y/w/h = the hit box around each circle)
-  const ms=availMoves(), n=ms.length, gap=14, margin=130, avail=W-2*margin;
-  const D=Math.max(58, Math.min(94, (avail-(n-1)*gap)/n));
-  const tot=n*D+(n-1)*gap; let x=W/2-tot/2; const cy=H-56;
-  return ms.map(m=>{ const r={m, x, y:cy-D/2, w:D, h:D, cx:x+D/2, cy, rad:D/2}; x+=D+gap; return r; });
+  // circular move buttons, hugging the bottom-right (x/y/w/h = the hit box around each circle)
+  const ms=availMoves(), n=ms.length, gap=14;
+  const D=rowDiameter(n, gap, 94, W*0.74);                 // grows toward the physical-tap floor
+  const slots=bottomRightRow(n, D, gap);
+  return ms.map((m,i)=>Object.assign({m}, slots[i]));
 }
 function drawChargeGauge(x,y){
   g.textAlign='left'; g.textBaseline='middle';
@@ -1595,7 +1626,7 @@ function drawMoveBar(){
   if(!duel) drawChargeGauge(14, H-54);                  // duel uses energy bars, not the charge meter
   const rects=moveBarRects();
   for(let ki=0; ki<rects.length; ki++){
-    const r=rects[ki], m=r.m, sel=(m.key===equipped), cx=r.cx, cy=r.cy, rad=r.rad;
+    const r=rects[ki], m=r.m, sel=(m.key===equipped), cx=r.cx, cy=r.cy, rad=r.rad, k=rad/47;
     const aff = duel ? !(castCD>0||pikaCast) : canCast(m);   // duel: dimmed only while on cooldown / winding up
     g.globalAlpha = aff?1:0.45;
     // base disc
@@ -1609,20 +1640,20 @@ function drawMoveBar(){
       g.restore();
     }
     // badge along the bottom: speed/type in a duel, charge cost otherwise
-    g.font='700 13px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.font='700 '+Math.round(13*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     const basic = m.kind==='basic';
     const badge = duel ? (basic?'FAST':'POWER') : (m.cost>0?('⚡'+m.cost):'FREE');
-    const bw=g.measureText(badge).width+14;
-    g.fillStyle='rgba(0,0,0,.62)'; rr(cx-bw/2, cy+rad-15, bw, 19, 9); g.fill();
+    const bw=g.measureText(badge).width+14*k;
+    g.fillStyle='rgba(0,0,0,.62)'; rr(cx-bw/2, cy+rad-15*k, bw, 19*k, 9*k); g.fill();
     g.fillStyle= duel ? (basic?'#9af0c6':'#ffd23a') : (m.cost>0?'#ffe14a':'#9af0c6');
-    g.fillText(badge, cx, cy+rad-5);
+    g.fillText(badge, cx, cy+rad-5*k);
     // ring (selected glows)
     g.lineWidth=sel?5:3; g.strokeStyle=sel?m.col:'rgba(255,255,255,.30)';
     if(sel){ g.shadowColor=m.col; g.shadowBlur=14; }
     g.beginPath(); g.arc(cx,cy,rad,0,7); g.stroke(); g.shadowBlur=0;
     // keyboard hint chip (Z X C V B)
-    if(KEYS[ki]){ g.fillStyle='rgba(0,0,0,.66)'; g.beginPath(); g.arc(cx, cy-rad+3, 11, 0, 7); g.fill();
-      g.fillStyle='#fff'; g.font='700 13px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(KEYS[ki], cx, cy-rad+4); }
+    if(KEYS[ki]){ g.fillStyle='rgba(0,0,0,.66)'; g.beginPath(); g.arc(cx, cy-rad+3*k, 11*k, 0, 7); g.fill();
+      g.fillStyle='#fff'; g.font='700 '+Math.round(13*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(KEYS[ki], cx, cy-rad+4*k); }
     g.globalAlpha=1;
   }
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
@@ -1741,6 +1772,7 @@ function drawMuteOnly(){
    ============================================================ */
 function frame(now){
   let dt=(now-lastT)/1000; lastT=now; if(dt>0.05) dt=0.05;
+  updateRenderScale();                  // keep the touch-control size floor matched to the live canvas size
   update(dt); render();
   if(paused) drawPause();             // overlay rides on top of the frozen frame
   requestAnimationFrame(frame);

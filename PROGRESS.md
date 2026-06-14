@@ -59,9 +59,13 @@ _Last updated: 2026-06-14._
 - `voice(file, vol, chan)` one-shot clips with channels `foe`/`pika`/`ash`.
 
 ## Open items / TODO
-- **Tablet test pass** — likely tweaks: dodge-button + move-button **size and
-  position** (currently fixed px on the 960×540 canvas); consider scaling
-  controls to screen size.
+- **Tablet test pass (on-device)** — the controls now scale: `rowDiameter`
+  enforces a ~46 CSS-px physical-tap floor (via a live `RENDER_SCALE`) and
+  `bottomRightRow` anchors both clusters in the bottom-right thumb-zone (dodge
+  arrows and the move bar are mutually exclusive, so they share the zone and the
+  thumb doesn't travel). Button text scales with radius. Still needs **real
+  hardware play-testing** to confirm reach/size feel; revisit the floor (46px),
+  edge pad (`CTRL_PAD`), and zone widths (`W*0.6` / `W*0.74`) from there.
 - **Balance tuning** (all first-pass, untested): energy 100 each; dmg 10/15;
   dive at 30% HP heals 45%; submerge-dodge 28%; rile at 18%; wind-ups
   basic 0.85s / special 1.5s; intro ~9s (has skip).
