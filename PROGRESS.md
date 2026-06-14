@@ -84,6 +84,10 @@ _Last updated: 2026-06-14._
   (e.g. const used-before-init), and (2) drives the real `update()` loop to
   assert the scoring rule holds (timed jump onto the correct balloon scores;
   never-jumping for a raised lane misses). Exit 0 = pass, 1 = fail.
+- **`.githooks/pre-push`** — runs the selftest and blocks the push on failure.
+  Enable in a fresh clone with `git config core.hooksPath .githooks` (it's local
+  config, not committed). Skips gracefully if Node is absent; override one push
+  with `git push --no-verify`.
 
 ## Open items / TODO
 - **Tablet test pass (on-device)** — the controls now scale: `rowDiameter`

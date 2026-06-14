@@ -1,0 +1,26 @@
+#!/bin/sh
+# Pre-push guard: run the headless self-test before allowing a push.
+#
+# Enable in a fresh clone with:   git config core.hooksPath .githooks
+# Override a single push with:     git push --no-verify
+#
+# Skips gracefully (allows the push) if Node isn't installed, so the hook never
+# blocks on missing infra — but a genuine selftest failure aborts the push.
+
+root="$(git rev-parse --show-toplevel)"
+test="$root/tools/selftest.js"
+
+if [ ! -f "$test" ]; then
+  exit 0
+fi
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-push: node not found — skipping selftest (install Node to enable the guard)." >&2
+  exit 0
+fi
+
+echo "pre-push: running tools/selftest.js ..." >&2
+if node "$test"; then
+  exit 0
+fi
+echo "pre-push: selftest FAILED — push aborted. Fix it, or override with: git push --no-verify" >&2
+exit 1
