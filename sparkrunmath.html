@@ -465,6 +465,19 @@ const L1_POOLS = [
    [55,33],[14,82],[47,21],[65,34],[81,17],[42,35],[15,63],[71,18],[26,42],[54,23],
    [37,51],[64,14],[85,12],[13,36],[46,41],[28,61],[73,25],[52,37],[17,81],[33,45]],
 ];
+// Level 2 subtraction pools, same three stages (random, non-repeating draws):
+//   stage 0 = questions 1–8   (single digit, minuend ≤ 10)
+//   stage 1 = questions 9–17  (teens/twenties − small, no borrow)
+//   stage 2 = questions 18–25 (two-digit − two-digit, no borrow, positive)
+const L2_POOLS = [
+  [[9,4],[6,2],[8,1],[5,3],[7,4],[10,5],[4,2],[8,5],[9,7],[6,3],
+   [7,2],[5,1],[10,4],[8,6],[9,2],[7,6],[3,2],[8,3],[10,8],[9,5]],
+  [[17,10],[15,5],[19,4],[26,6],[14,10],[18,3],[25,10],[16,2],[19,10],[13,3],
+   [27,7],[18,10],[15,2],[29,10],[17,5],[23,3],[16,4],[22,10],[19,8],[24,10]],
+  [[45,23],[68,34],[57,15],[89,46],[76,22],[94,51],[38,17],[55,24],[87,35],[69,48],
+   [46,13],[75,42],[98,76],[59,27],[84,53],[67,31],[48,25],[79,14],[95,62],[56,33],
+   [88,45],[64,21],[77,35],[99,54],[49,28],[86,63],[58,16],[74,41],[96,75],[65,32]],
+];
 
 // each level is a 25-question run: gen(step 0..24) -> {q,ans}.
 // optional bossGen() gives the end-of-level duel its own flavour of questions.
@@ -480,8 +493,13 @@ const LEVELS = [
     // boss — two-digit + single-digit, usually bridging a ten (46+5, 81+9…)
     bossGen:()=>{ const a=rnd(21,89), b=rnd(4,10); return {q:`${a} + ${b}`, ans:a+b}; } },
   { name:'Orchard Hop',   theme:'apple', count:25,
-    // L2 — subtraction only, growing from the teens toward ~30
-    gen:s=>{ const a=rnd(11,Math.min(30,13+s)); const b=rnd(3,Math.min(15,a-2)); return {q:`${a} − ${b}`, ans:a-b}; } },
+    // L2 — subtraction in 3 difficulty stages, random (no repeats) from fixed
+    // pools: Q1–8 single digit (minuend ≤10), Q9–17 teens/twenties − small,
+    // Q18–25 two-digit − two-digit (no borrow, positive).
+    gen:s=>{
+      const stage = s<8 ? 0 : s<17 ? 1 : 2;
+      const [a,b] = drawQ(L2_POOLS[stage], 'L2_'+stage);
+      return {q:`${a} − ${b}`, ans:a-b}; } },
   { name:'Bubble Bay',    theme:'bubble', count:25,
     // L3 — mix of + and −, two-digit with carrying / borrowing (kept under 100)
     gen:s=>{ const big=Math.min(70,16+s*2);

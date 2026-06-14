@@ -10,10 +10,10 @@ _Last updated: 2026-06-14._
 
 ### Maths runner (levels 1–5)
 - 25 questions per level on a within-level difficulty ramp (`LEVELS`).
-- L1 addition in 3 fixed-difficulty stages (random, non-repeating draws from
-  `L1_POOLS` via `drawQ`/`QBAG`): Q1–8 single digit (≤9), Q9–17 teens/twenties,
-  Q18–25 two-digit + two-digit (no carry, <100). L2 subtraction; L3 +/− mix;
-  L4 ×; L5 +/−/× (× on 6–9 tables).
+- L1 addition & L2 subtraction each run in 3 fixed-difficulty stages (random,
+  non-repeating draws from `L1_POOLS`/`L2_POOLS` via `drawQ`/`QBAG`): Q1–8 single
+  digit, Q9–17 teens/twenties, Q18–25 two-digit (no carry/borrow, <100). L3 +/−
+  mix; L4 ×; L5 +/−/× (× on 6–9 tables).
 - 3 hearts, refilled at the start of each level (shared with that level's boss).
 - Correct answer placed in a **uniformly random** lane (`makeChoices`).
 - Speed run (×1.5, ⅓ less time) on a 5-streak — difficulty unchanged.
