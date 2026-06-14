@@ -22,53 +22,107 @@ Hosted via GitHub Pages.
 - **Pause:** the ❚❚ button (top-left of the mute button), or **P / Esc**.
 - **Mute:** 🔊 button (top-right).
 
-### Maths design
+## Game progression
 
-Each level is a **25-question run**, then a boss. Difficulty ramps within the
-level (per `LEVELS` in the source):
+A full run is **5 levels**. Each level is a **25-question runner stage** in its
+own scene, followed by that level's **boss**. You have **3 hearts**, refilled at
+the start of each level (and shared with its boss). The first two bosses are
+hands-on **action duels** (no maths); the last three are **classic maths bosses**.
 
-| Level | Scene | Operation |
-|------:|-------|-----------|
-| 1 | Bloom Meadow | Addition in 3 fixed-difficulty stages (random, no repeats): Q1–8 single digit (≤9), Q9–17 teens/twenties, Q18–25 two-digit + two-digit (no carry, <100). |
-| 2 | Orchard Hop | Subtraction in 3 fixed-difficulty stages (random, no repeats): Q1–8 single digit, Q9–17 teens/twenties − small, Q18–25 two-digit − two-digit (no borrow). |
-| 3 | Bubble Bay | Mix of + and − (two-digit, carry/borrow) |
-| 4 | Crystal Caves | Multiplication only (2/5/10, widening to 3/4) |
-| 5 | Star Summit | Mix of +, −, × (× uses the 6/7/8/9 tables) |
+| Level | Scene | Questions (×25) | Boss | Boss battle |
+|------:|-------|-----------------|------|-------------|
+| 1 | Bloom Meadow  | **Addition** — 3 stages | Gyarados | Action duel (lake) |
+| 2 | Orchard Hop   | **Subtraction** — 3 stages | Lucario | Action duel (dojo) |
+| 3 | Bubble Bay    | **+ / −** mix (two-digit, carry/borrow) | Venusaur | Classic maths boss |
+| 4 | Crystal Caves | **×** (2/5/10 → 3/4 tables) | Scizor | Classic maths boss |
+| 5 | Star Summit   | **+ / − / ×** (× on the 6/7/8/9 tables) | Galarian Moltres | Classic maths boss |
 
 Answers are shown across three lanes with the correct one in a **uniformly
 random** lane.
 
-## The no-maths boss duels (Levels 1 & 2)
+## Question types
 
-Levels 1 and 2 cap with a bespoke **action duel** instead of a maths boss
-(Levels 3–5 still use the classic scrolling-maths boss). A boss opts in via
-`cfg.duel` — `'lake'` (Gyarados) or `'dojo'` (Lucario) — and the scene, intro
-roar, dodge style and low-HP mechanic vary per boss. Flow:
+For **Levels 1 & 2** the questions are drawn **at random with no repeats** within
+a run, from fixed pools split into **three difficulty stages** that step up as the
+level goes on. **Levels 3–5** use procedural generators that ramp within the
+level.
+
+### Level 1 — Addition (Bloom Meadow)
+
+| Stage | Questions | Type | Examples |
+|------:|-----------|------|----------|
+| 1 | Q1–8   | single digit, answers ≤ 9 | `4 + 3`, `6 + 2`, `1 + 8` |
+| 2 | Q9–17  | sums into the teens / twenties | `8 + 7`, `12 + 13`, `19 + 5` |
+| 3 | Q18–25 | two-digit + two-digit, no carry, under 100 | `23 + 14`, `83 + 16`, `55 + 33` |
+
+### Level 2 — Subtraction (Orchard Hop)
+
+| Stage | Questions | Type | Examples |
+|------:|-----------|------|----------|
+| 1 | Q1–8   | single digit, minuend ≤ 10 | `9 − 4`, `10 − 5`, `8 − 3` |
+| 2 | Q9–17  | teens / twenties − small, no borrow | `17 − 10`, `25 − 10`, `19 − 8` |
+| 3 | Q18–25 | two-digit − two-digit, no borrow | `45 − 23`, `89 − 46`, `98 − 76` |
+
+### Levels 3–5 — procedural (ramp within the level)
+
+- **L3 Bubble Bay** — a mix of addition and subtraction, two-digit with
+  carrying / borrowing, kept under 100.
+- **L4 Crystal Caves** — multiplication only, starting on the 2 / 5 / 10 tables
+  and widening to 3 / 4.
+- **L5 Star Summit** — a mix of +, − and ×, with × drawing on the harder
+  6 / 7 / 8 / 9 tables.
+
+## Bosses & battle scenes
+
+After a level's 25 questions, its boss appears. There are two battle styles.
+
+### Action duels (no maths) — Levels 1 & 2
+
+A bespoke, hands-on fight. A boss opts in via `cfg.duel` — `'lake'` (Gyarados) or
+`'dojo'` (Lucario) — and the scene, intro, dodge style and low-HP trick vary per
+boss. Flow:
 
 1. **Scripted intro** (`buildIntro`): three Ash↔Pikachu coaching exchanges (Ash
    encourages, Pikachu replies each time) → the foe roars and Pikachu answers →
    **"Ready to battle?"** prompt. Voice + Ash poses, no dialogue box. Tap
    mid-cutscene to skip to the prompt; tap the prompt to start.
-2. **Battle:** no questions. Energy bars for both (Pikachu yellow top-left,
-   Gyarados blue top-right; red at ≤10%).
-   - **Attack:** tap a circular move button (or **Z/X/C/V/B**). **Basic**
-     (Quick Attack) fires instantly for 10%; **special** (Thunderbolt, Electro
-     Ball, …) has a short wind-up for 15%. Pikachu's moves play 4-frame
-     animations.
+2. **Battle:** no questions — pure action. Both sides have an **energy bar**
+   (Pikachu yellow top-left, boss blue top-right; red at ≤10%). Empty the boss's
+   bar to win; don't let yours hit zero.
+   - **Attack:** tap a circular move button (or **Z/X/C/V/B**). **Basic** (Quick
+     Attack) fires instantly for ~10%; **specials** (Thunderbolt, Electro Ball, …)
+     wind up briefly for ~15%. Each move travels to the boss — a **lightning arc**
+     (Thunderbolt), a **flying energy orb** (Electro Ball), or a **dash lunge**
+     (Quick Attack).
    - **Dodge:** three arrows sit permanently **bottom-left** — **◀ roll back /
-     ▲ jump / ▶ roll forward** (any one dodges; keyboard **←/→/↑**). They light
-     up when the foe winds up; a missed dodge costs energy. Move buttons sit
-     **bottom-right**, so both control rows are always on screen.
-   - **Per-boss tricks:** **Gyarados** (lake) can **submerge-dodge** a hit, and
-     at low HP **dives to replenish and re-emerge stronger** (Dragon Dance).
-     **Lucario** (dojo) instead **sidesteps** to dodge, and at low HP uses
-     **Swords Dance** — a one-time enrage (power up, no heal). Pikachu at low
-     energy gets an **angry rile-up** that restores some bar.
+     ▲ jump / ▶ roll forward** (any one dodges; keyboard **←/→/↑**). They light up
+     when the foe winds up to attack; a missed dodge costs energy. Move buttons
+     sit **bottom-right**, so both control rows are always on screen.
+   - **Per-boss tricks:** **Gyarados** (lake) can **submerge-dodge** a hit, and at
+     low HP **dives to replenish and re-emerge stronger** (Dragon Dance).
+     **Lucario** (dojo) instead **sidesteps**, and at low HP uses **Swords Dance**
+     — a one-time enrage (power up, no heal). Pikachu, when low on energy, gets an
+     **angry rile-up** that restores some bar.
    - Ash coaches from the side (pose + voice on key beats).
 
-Cast: Ash (4 poses), Pikachu (run / jump / roll / 4 move sequences), Gyarados
-(idle + Dragon Dance / Waterfall / Ice Fang sequences), Lucario (idle/hurt +
-Aura Sphere / Flash Cannon / Dragon Pulse / Vacuum Wave sequences).
+### Classic maths bosses — Levels 3–5
+
+The boss appears and **questions keep coming** (drawn from the hard end of the
+level's range). It's the same jump-to-answer runner mechanic, but now:
+
+- A **correct answer** fires Pikachu's **equipped move** at the boss for damage.
+  You manage a **charge meter**: stronger moves cost charge, while Quick Attack /
+  Charm refund it — so you pick when to unload your big hits.
+- A **wrong answer** costs a **heart** (unless a shield move soaks it).
+- Empty the boss's **HP bar** to win. Boss HP scales with the level (roughly
+  10 at L3 up to ~16 at L5).
+- Bosses: **Venusaur**, **Scizor**, **Galarian Moltres** (their move cut-ins
+  appear when they strike).
+
+**Cast:** Ash (4 poses), Pikachu (run / jump / roll / 4 move sequences), Gyarados
+(idle + Dragon Dance / Waterfall / Ice Fang), Lucario (idle/hurt + Aura Sphere /
+Flash Cannon / Dragon Pulse / Vacuum Wave), plus Venusaur, Scizor and Galarian
+Moltres.
 
 ## Controls summary
 
@@ -76,8 +130,11 @@ Aura Sphere / Flash Cannon / Dragon Pulse / Vacuum Wave sequences).
 |--------|-------|----------|
 | Hop lane / advance | tap | Space / ↑ |
 | Pause | ❚❚ button | P / Esc |
-| Duel: dodge | ◀ ▲ ▶ buttons | ← / ↑ / → |
-| Duel: moves 1–5 | circular buttons | Z X C V B |
+| Duel: dodge | ◀ ▲ ▶ buttons (bottom-left) | ← / ↑ / → |
+| Duel: moves 1–5 | circular buttons (bottom-right) | Z X C V B |
+
+> **Dev tip:** a `#devjump` dropdown on the start screen (enabled by the `DEV`
+> flag) jumps straight to any level's play stage or boss fight, for testing.
 
 ## Tech
 
@@ -103,12 +160,13 @@ Aura Sphere / Flash Cannon / Dragon Pulse / Vacuum Wave sequences).
 - **Pikachu move animations (4-frame strips):** `pika_seq_qa/tb/eb/it.png`;
   round button icons `pika_btn_*.png`; legacy single move art `pika_*.png`.
 - **Bosses:** `gyarados.png`, `lucario.png`, `venusaur.png`, `scizor.png`,
-  `galmoltres.png`; Gyarados move animations `gyara_seq_dd/wf/if.png`.
+  `galmoltres.png`; Gyarados move animations `gyara_seq_dd/wf/if.png`; Lucario
+  `luca_seq_as/fc/dp/vw.png`.
 - **Ash:** `ash_ready/point/punch/neutral.png`.
 - **Audio:** music `music.mp3`, `music2.mp3`, `levelup.mp3`; Gyarados
   `gyara_roar/roar2/cry.mp3`; Lucario `luca_growl/aura/energy.mp3`; Pikachu
   `pika_voice/cry/thunder/angry.mp3`; Ash
   `ash_hey/battlehuh/wannabattle/spirit/dobest/counton.mp3`.
 
-See `PROGRESS.md` for current status, open items, and how the sprite-sheet
-extraction pipeline works.
+See `PROGRESS.md` for current status and open items, and `PROGRESS_ARCHIVE.md`
+for full implemented-feature detail and the sprite-sheet extraction pipeline.
