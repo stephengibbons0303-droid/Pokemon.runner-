@@ -33,7 +33,7 @@ hands-on **action duels** (no maths); the last three are **classic maths bosses*
 |------:|-------|-----------------|------|-------------|
 | 1 | Bloom Meadow  | **Addition** — 3 stages | Gyarados | Action duel (lake) |
 | 2 | Orchard Hop   | **Subtraction** — 3 stages | Lucario | Action duel (dojo) |
-| 3 | Bubble Bay    | **+ / −** mix (two-digit, carry/borrow) | Venusaur | Classic maths boss |
+| 3 | Bubble Bay    | **Multiplication** — 3 stages | Venusaur | Classic maths boss |
 | 4 | Crystal Caves | **×** (2/5/10 → 3/4 tables) | Scizor | Classic maths boss |
 | 5 | Star Summit   | **+ / − / ×** (× on the 6/7/8/9 tables) | Galarian Moltres | Classic maths boss |
 
@@ -42,10 +42,10 @@ random** lane.
 
 ## Question types
 
-For **Levels 1 & 2** the questions are drawn **at random with no repeats** within
-a run, from fixed pools split into **three difficulty stages** that step up as the
-level goes on. **Levels 3–5** use procedural generators that ramp within the
-level.
+For **Levels 1, 2 & 3** the questions are drawn **at random with no repeats**
+within a run, from fixed pools split into **three difficulty stages** that step
+up as the level goes on. **Levels 4 & 5** use procedural generators that ramp
+within the level.
 
 ### Level 1 — Addition (Bloom Meadow)
 
@@ -63,10 +63,16 @@ level.
 | 2 | Q9–17  | teens / twenties − small, no borrow | `17 − 10`, `25 − 10`, `19 − 8` |
 | 3 | Q18–25 | two-digit − two-digit, no borrow | `45 − 23`, `89 − 46`, `98 − 76` |
 
-### Levels 3–5 — procedural (ramp within the level)
+### Level 3 — Multiplication (Bubble Bay)
 
-- **L3 Bubble Bay** — a mix of addition and subtraction, two-digit with
-  carrying / borrowing, kept under 100.
+| Stage | Questions | Type | Examples |
+|------:|-----------|------|----------|
+| 1 | Q1–8   | ×2 / ×5 / ×10, small multipliers | `4 × 2`, `3 × 5`, `2 × 10` |
+| 2 | Q9–17  | ×2 / ×5 / ×10, multipliers 6–10 | `6 × 2`, `7 × 5`, `9 × 10` |
+| 3 | Q18–25 | harder tables (3, 4, 6, 7, 8, 9) | `6 × 6`, `8 × 7`, `9 × 9` |
+
+### Levels 4–5 — procedural (ramp within the level)
+
 - **L4 Crystal Caves** — multiplication only, starting on the 2 / 5 / 10 tables
   and widening to 3 / 4.
 - **L5 Star Summit** — a mix of +, − and ×, with × drawing on the harder

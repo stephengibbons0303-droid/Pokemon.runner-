@@ -14,8 +14,9 @@ _Last updated: 2026-06-14._
 - **Maths runner, 5 levels**, 25 questions each, timed-jump skill mechanic,
   forgiving 2-D overlap scoring, speed-run streak bonus, hearts/pause. *(detail
   → archive)*
-- **L1 & L2 questions** are curated 3-stage pools (`L1_POOLS`/`L2_POOLS`), random
-  with no repeats per stage. L3–L5 still use procedural generators.
+- **L1–L3 questions** are curated 3-stage pools (`L1_POOLS`/`L2_POOLS`/`L3_POOLS`
+  = add / subtract / multiply), random with no repeats per stage. L4–L5 still use
+  procedural generators (and L4 also × — likely redefined when its sets arrive).
 - **No-maths boss duels** (config-driven via `cfg.duel`): **L1 Gyarados** (lake)
   and **L2 Lucario** (dojo) are full action duels — scripted intro, energy bars,
   move-vs-dodge, per-boss low-HP mechanic, projectiles that travel to the boss.
@@ -39,7 +40,9 @@ _Last updated: 2026-06-14._
 - Duel polish: Pikachu & Ash **planted on the floor, no idle sway**
   (`DUEL_PIKA_DROP`, `still` flag on `drawCreature`, Ash bob removed); lighter
   lair dusk tint so the bank reads clearly.
-- **L1 + L2 questions** converted to the 3-stage curated pools.
+- **L1 + L2 + L3 questions** converted to the 3-stage curated pools (L3 is now
+  multiplication, replacing the old +/− mix; exact-duplicate facts in the
+  supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
 
 ## Open items / TODO
 - **Tablet test pass (on-device)** — controls scale to a ~46 CSS-px physical-tap
