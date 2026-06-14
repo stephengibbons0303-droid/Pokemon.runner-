@@ -297,12 +297,13 @@ const GRACE_T   = 0.26;                    // scoring grace: how long the highes
 // point, we give him a vertical CATCH BAND (an area up his body, since his anchor
 // sits near his feet) and register the highest lane whose balloon band that catch
 // band overlaps — so much more of the character image counts as "contact".
-const BALLOON_HALF  = CARD_H/2;            // 50 — half the answer balloon's height
+// (CARD_H is read lazily inside the function — it's declared further down.)
 const PIKA_REACH_UP = 52;                  // catch area above the anchor (toward head) — bigger = more forgiving
 const PIKA_REACH_DN = 42;                  // catch area below the anchor (toward feet) — keeps a lane registered longer on the way down
 function laneFromY(y){
+  const bh=CARD_H/2;                        // half the answer balloon's height
   for(let L=2; L>=1; L--){                  // prefer the higher lane on any overlap
-    const top=LANE_Y[L]-BALLOON_HALF, bot=LANE_Y[L]+BALLOON_HALF;
+    const top=LANE_Y[L]-bh, bot=LANE_Y[L]+bh;
     if(y-PIKA_REACH_UP <= bot && y+PIKA_REACH_DN >= top) return L;
   }
   return 0;                                 // no balloon overlap → ground lane
