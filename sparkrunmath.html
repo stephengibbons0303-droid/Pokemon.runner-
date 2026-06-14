@@ -36,12 +36,19 @@
   #fsbtn:active{background:rgba(35,22,53,.9);}
   #fsbtn[hidden]{display:none;}
   @media all and (display-mode:standalone){#fsbtn{display:none!important;}}
+  /* dev-only "jump to" menu on the start screen (gated by the DEV flag in JS) */
+  #devjump{position:fixed;left:50%;transform:translateX(-50%);top:max(8px,env(safe-area-inset-top));z-index:60;
+    font-family:'Fredoka',system-ui,sans-serif;font-size:14px;font-weight:600;padding:7px 12px;border-radius:10px;
+    border:1px solid rgba(255,255,255,.25);background:rgba(35,22,53,.82);color:var(--cream);
+    -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);max-width:70vw;}
+  #devjump[hidden]{display:none;}
 </style>
 </head>
 <body>
   <div id="stage"><canvas id="game" width="960" height="540"></canvas></div>
   <div id="rotate"><div class="ph">📱</div><p>Turn your device sideways to play!</p></div>
   <button id="fsbtn" type="button" aria-label="Toggle fullscreen" hidden>⛶</button>
+  <select id="devjump" aria-label="Dev: jump to a part of the game" hidden></select>
 
 <script>
 "use strict";
@@ -286,15 +293,17 @@ function cleanSheet(img, frames){
 // Pikachu's move set — 2 at level 1, learn one more each level you clear.
 // unlock = level index the move becomes available; cost/gain feed the charge meter.
 const MAX_CHARGE = 6;
+// proj = how the move travels to the boss: 'dash' (Pikachu lunges in), 'bolt'
+// (lightning arc), 'orb' (a flying energy ball). dmg-0 buffs need none.
 const PIKA_MOVES = [
-  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', kind:'basic', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge' },
-  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt' },
-  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit' },
-  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit' },
-  { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:2, blurb:'Heavy slam' },
+  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', kind:'basic', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge', proj:'dash' },
+  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt', proj:'bolt' },
+  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit', proj:'orb' },
+  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit', proj:'orb' },
+  { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:2, blurb:'Heavy slam', proj:'dash' },
   { key:'cm', name:'Charm',        file:'pika_charm.png',       dmg:0, cost:0, gain:2, col:'#ff9ed6', unlock:3, blurb:'+2 charge' },
   { key:'rf', name:'Reflect',      file:'pika_reflect.png',     dmg:0, cost:1, gain:0, shield:2, col:'#b9a6ff', unlock:4, blurb:'Blocks 2 hits' },
-  { key:'gx', name:'G-Max Volt Crash', file:'pika_gmax.png',    dmg:8, cost:5, gain:0, col:'#ff5a3c', unlock:5, blurb:'ULTIMATE' },
+  { key:'gx', name:'G-Max Volt Crash', file:'pika_gmax.png',    dmg:8, cost:5, gain:0, col:'#ff5a3c', unlock:5, blurb:'ULTIMATE', proj:'bolt' },
 ];
 function availMoves(){ return PIKA_MOVES.filter(m=>m.unlock<=levelIdx); }
 function curMove(){ return PIKA_MOVES.find(m=>m.key===equipped) || PIKA_MOVES[1]; }
@@ -512,6 +521,7 @@ let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
+let shots=[], pikaLunge=null;                         // flying energy orbs + Pikachu's melee lunge
 let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
 let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
 // no-math lair duel (Gyarados): a static confrontation — chat, then tap moves vs. dodge attacks
@@ -551,12 +561,23 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; duelSub=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; duelSub=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
   groundPlayer();
   spawnGate();
+}
+
+// dev-only: jump straight to a level's play section or its boss fight (see the
+// #devjump start-screen menu). DEV gates whether that menu shows at all.
+const DEV = true;   // ← set false for a release build to hide the dev jump menu
+function devJump(kind, idx){
+  Audio8.startMusic();
+  resetRun();
+  idx = Math.max(0, Math.min(LEVELS.length-1, idx|0));
+  if(kind==='boss'){ levelIdx=idx; stepInLvl=LEVELS[idx].count; hearts=3; groundPlayer(); enterBoss(); }
+  else { startLevel(idx); }
 }
 
 function spawnGate(){
@@ -584,7 +605,7 @@ function enterBoss(){
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, sideX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
          evade:null, evadeDir:1, atkKind:'basic', atkDmg:BASIC_DMG, atkSeq:null, atkN:0 };   // + special-move animation
-  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2;
+  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; pikaLunge=null; pikaDX=0;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
@@ -668,7 +689,7 @@ function foeAttack(){
   boss.atkKind=special?'special':'basic'; boss.atkDmg=special?SPECIAL_DMG:BASIC_DMG;
   boss.atk=0.6; flash={a:0.4,col:special?'#7aa6ff':'#9fd8ff'};
   if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7,'foe');
-  const windup=(special?1.5:0.85)/boss.power;
+  const windup=(special?1.8:1.15)/boss.power;          // a touch longer → fairer reaction time on mobile
   dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.8:2.8)/boss.power;
   bossMsg=special?(boss.cfg.name+' charges a big attack!'):''; bossMsgT=special?1.0:0;
   const atks=boss.cfg.atkSeqs||[];                     // animate the move from the boss's own strips
@@ -684,12 +705,14 @@ function doDodge(dir){
          bossMsg = d<0?'Rolled back!':'Rolled forward!'; }
   bossMsgT=0.7;
 }
-// big directional dodge buttons, shown only during the wind-up window
+// big directional dodge buttons — CENTERED along the bottom (distinct from the
+// bottom-right move bar) and large, so the dodge moment is unmistakable on mobile
 function dodgeBtnRects(){
   const items=[['back','◀'],['up','▲'],['fwd','▶']];
-  const gap=18, D=rowDiameter(items.length, gap, 100, W*0.6);   // bottom-right thumb-zone
-  const slots=bottomRightRow(items.length, D, gap);
-  return items.map((it,i)=>Object.assign({dir:it[0], glyph:it[1]}, slots[i]));
+  const n=items.length, gap=22, D=rowDiameter(n, gap, 118, W*0.72);
+  const tot=n*D+(n-1)*gap, x0=(W-tot)/2, cy=H-CTRL_PAD-D/2;     // centred thumb-zone
+  return items.map((it,i)=>{ const x=x0+i*(D+gap);
+    return { dir:it[0], glyph:it[1], cx:x+D/2, cy, rad:D/2, x, y:cy-D/2, w:D, h:D }; });
 }
 // Pikachu nearly out of energy → angry surge that replenishes some of his bar
 function rileUp(){
@@ -706,6 +729,11 @@ function updateDuel(dt){
   // sideways roll-hop: ease Pikachu out and back along x
   if(dodgeRoll){ dodgeRoll.t+=dt; const p=Math.min(1,dodgeRoll.t/dodgeRoll.dur);
     pikaDX=Math.sin(p*Math.PI)*dodgeRoll.dir*98; if(p>=1){ dodgeRoll=null; pikaDX=0; } }
+  // melee lunge: Pikachu darts toward the boss, connects at the apex, returns
+  if(pikaLunge){ pikaLunge.t+=dt; const p=Math.min(1,pikaLunge.t/pikaLunge.dur);
+    pikaDX=Math.sin(p*Math.PI)*pikaLunge.reach;
+    if(!pikaLunge.hit && p>=0.5){ pikaLunge.hit=true; bossImpact(); }
+    if(p>=1){ pikaLunge=null; pikaDX=0; } }
   // let a dodge-hop fall back down once it has peaked
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
   // resolve a special move once its wind-up finishes
@@ -788,12 +816,38 @@ function spawnChallenge(){
   const choices=makeChoices(ans);
   bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
 }
-// Pikachu unleashes the equipped move on the boss
+// the boss's real on-screen body point, so projectiles/bolts actually land on it
+function bossAimPoint(){
+  if(bossMode==='duel' && boss){
+    const dojo = boss.cfg.duel==='dojo';
+    const drop = dojo ? DOJO_DROP : (DUEL_DROP + (boss.subY||0));
+    return { x: BOSS_X + (boss.sideX||0) - 30, y: BOSS_Y + drop - 20 };
+  }
+  return { x: BOSS_X-60, y: BOSS_Y };
+}
+// the burst + flinch when an attack connects with the boss
+function bossImpact(aim){
+  aim = aim || bossAimPoint();
+  correctPop(aim.x, aim.y);
+  if(boss && !boss.defeated) boss.hurt=Math.max(boss.hurt,0.4);
+}
+// Pikachu unleashes the equipped move on the boss — the FX now travels to the boss
 function pikaFire(m){
   const seq=moveSeq(m);
   pikaAtk={ m, spr:bossSprite(m.file), t:0, dur: seq?0.66:0.62 };
-  if(m.dmg>0){ if(!seq) zaps.push({ life:0.30, max:0.30, x1:PLAYER_X+40, y1:player.y-6, x2:BOSS_X-60, y2:BOSS_Y }); correctPop(BOSS_X-60, BOSS_Y); }
-  else correctPop(PLAYER_X+30, player.y-10);     // setup moves sparkle on Pikachu
+  if(m.dmg>0){
+    const aim=bossAimPoint(), proj=m.proj||'bolt';
+    if(proj==='dash' && bossMode==='duel'){
+      pikaLunge={ t:0, dur:0.5, reach: Math.max(60, aim.x-(PLAYER_X+90)), hit:false };   // lunge in, strike, return
+    } else if(proj==='orb'){
+      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, hit:false });
+    } else {                                                   // bolt (or dash outside a duel): a quick lightning arc
+      zaps.push({ life:0.32, max:0.32, x1:PLAYER_X+40, y1:player.y-6, x2:aim.x, y2:aim.y });
+      bossImpact(aim);
+    }
+  } else {
+    correctPop(PLAYER_X+30, player.y-10);     // setup moves sparkle on Pikachu
+  }
 }
 function bossDefeated(){
   prizes.push(levelIdx);
@@ -915,7 +969,8 @@ function update(dt){
   if(paused) return;                  // freeze all game logic while the pause overlay is up
   // master world scroll — drives every parallax layer. Faster in play, faster still in a speed run.
   const runState=(state==='play'||state==='resolve'||state==='boss');
-  const worldSpd = runState ? (speedMode?188:96) : 34;
+  const duelStill = state==='boss' && bossMode==='duel';        // duels are a static stand-off → freeze the scroll
+  const worldSpd = duelStill ? 0 : (runState ? (speedMode?188:96) : 34);
   world += dt*worldSpd;
   player.bob+=dt*4;
   // advance the run-cycle frame (faster while actually running)
@@ -955,6 +1010,8 @@ function update(dt){
     if(Math.random()<0.6) trail.push({x:PLAYER_X-18,y:player.y+10,vx:-30-Math.random()*40,vy:(Math.random()-0.5)*30,life:0.5,r:2+Math.random()*3,c:Math.random()<0.5?C.glow:C.spark});
   }
   zaps=zaps.filter(z=>{ z.life-=dt; return z.life>0; });
+  // flying energy orbs: advance, and burst on the boss when they land
+  shots=shots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ if(!s.hit){ s.hit=true; correctPop(s.x1,s.y1); if(boss&&!boss.defeated) boss.hurt=Math.max(boss.hurt,0.4); } return false; } return true; });
   trail=trail.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; return p.life>0; });
   confetti=confetti.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.rot+=p.vr*dt; return p.life>0 && p.y<H+40; });
   rings=rings.filter(p=>{ p.life-=dt; p.r+=(p.maxR-p.r)*Math.min(1,dt*7); return p.life>0; });
@@ -1443,9 +1500,10 @@ function drawLakeFront(){
   g.save();
   g.fillStyle='#2c66a6'; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy, LAKE.rx, LAKE.ry, 0,0,7); g.fill();
   g.fillStyle='rgba(120,200,255,.20)'; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy-6, LAKE.rx-26, LAKE.ry-8, 0,0,7); g.fill();
-  // moving ripple rings around where Gyarados meets the surface
+  // ripple rings around where Gyarados meets the surface — shimmer in place (clock-driven, so they live even when the scroll is frozen)
+  const rt=performance.now()*0.001;
   g.strokeStyle='rgba(255,255,255,.22)'; g.lineWidth=2;
-  for(let i=0;i<4;i++){ const rx=120+i*64+Math.sin(world*0.02+i)*6; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy-4, rx, rx*0.10, 0, 0, 7); g.stroke(); }
+  for(let i=0;i<4;i++){ const rx=120+i*64+Math.sin(rt*1.2+i)*6; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy-4, rx, rx*0.10, 0, 0, 7); g.stroke(); }
   g.fillStyle='rgba(255,255,255,.10)'; g.fillRect(LAKE.x-LAKE.rx, LAKE.cy-LAKE.ry, LAKE.rx*2, 3);   // surface glint line
   g.restore();
 }
@@ -1579,7 +1637,7 @@ function drawDuel(){
     drawLakeFront();        // water in front of his lower body → partly submerged
   }
   if(dodgeWin>0) drawDodgeWave();
-  drawZaps();
+  drawZaps(); drawShots();   // bolts + flying orbs
   drawAsh();                // trainer on the bank
   if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=28+p*30;   // charging glow on a special
     g.save(); g.globalAlpha=0.5*p; const gx=g.createRadialGradient(PLAYER_X+pikaDX,player.y-6,4,PLAYER_X+pikaDX,player.y-6,gr);
@@ -1652,7 +1710,7 @@ function drawBoss(){
     g.fillStyle=C.cream; g.font='700 36px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText(bossChal.q+' = ?', W/2, by+bh/2+2); g.textAlign='left'; g.textBaseline='alphabetic';
   }
-  drawZaps();
+  drawZaps(); drawShots();   // bolts + flying orbs
   // Pikachu: show the move sprite while attacking, else the usual runner
   if(pikaShield>0) drawShield(PLAYER_X, player.y);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
@@ -1757,6 +1815,26 @@ function drawSerpentPlaceholder(tint,hurt){
   g.beginPath(); g.moveTo(84,22); g.quadraticCurveTo(120,50,150,30); g.stroke();
 }
 
+// flying energy orbs (Electro Ball / Electroweb): a glowing core + trail, arcing to the boss
+function drawShots(){
+  const now=performance.now();
+  shots.forEach(s=>{
+    const p=Math.min(1,s.t/s.dur);
+    const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*26;   // gentle arc
+    const r=s.r*(0.85+0.15*Math.sin(now/40));
+    g.save();
+    // motion trail
+    g.globalAlpha=0.45; g.strokeStyle=s.col; g.lineWidth=4; g.lineCap='round';
+    g.beginPath(); g.moveTo(s.x0+(x-s.x0)*0.62, s.y0+(y-s.y0)*0.62 - Math.sin(p*Math.PI)*16); g.lineTo(x,y); g.stroke();
+    // glowing core
+    g.globalAlpha=1; const gx=g.createRadialGradient(x,y,2,x,y,r);
+    gx.addColorStop(0,'#ffffff'); gx.addColorStop(0.45,s.col); gx.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=gx; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+    // crackle ring
+    g.globalAlpha=0.8; g.strokeStyle=s.col; g.lineWidth=2; g.beginPath(); g.arc(x,y,r*0.7,0,7); g.stroke();
+    g.restore();
+  });
+}
 function drawZaps(){
   zaps.forEach(z=>{
     const a=Math.max(0,z.life/z.max);
@@ -1940,11 +2018,24 @@ function drawMuteOnly(){
 /* ============================================================
    LOOP
    ============================================================ */
+// dev-only "jump to" menu: populate once, then it's shown only on the start screen
+const devSel = document.getElementById('devjump');
+if(DEV && devSel){
+  const opt=(v,t)=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; devSel.appendChild(o); };
+  opt('', '🛠 Jump to…');
+  for(let i=0;i<LEVELS.length;i++) opt('play:'+i, 'Level '+(i+1)+' — play');
+  for(let i=0;i<LEVELS.length;i++){ const b=BOSSES[i]||BOSSES[BOSSES.length-1];
+    opt('boss:'+i, 'Level '+(i+1)+' boss — '+(b.name||'?')+(b.duel?' (duel)':'')); }
+  devSel.addEventListener('change', ()=>{ const v=devSel.value; devSel.value=''; devSel.blur();
+    if(!v) return; const ix=v.indexOf(':'); devJump(v.slice(0,ix), +v.slice(ix+1)); });
+}
+
 function frame(now){
   let dt=(now-lastT)/1000; lastT=now; if(dt>0.05) dt=0.05;
   updateRenderScale(); layoutTopButtons();   // keep the touch-control size floor matched to the live canvas size
   update(dt); render();
   if(paused) drawPause();             // overlay rides on top of the frozen frame
+  if(devSel) devSel.hidden = !(DEV && state==='menu' && !paused);   // dev jump menu: start screen only
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

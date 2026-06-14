@@ -62,12 +62,20 @@ L3–L5 are still classic.
 - **Energy bars** (0–100): Pikachu yellow (left), Gyarados blue (right); red at
   ≤10%. Hearts/charge meter hidden in the duel.
 - **Combat:** basic move = instant / 10% dmg; special = ~0.55s wind-up / 15%.
-  Gyarados attacks the same (basic short tell / special long tell). Dodge window
-  length = wind-up. Gyarados **submerge-dodges** (~28%) and, once at ≤30% HP,
-  **dives → heals ~45% → re-emerges stronger** (power ×1.35, plays Dragon
-  Dance). Pikachu at ≤18% gets an **angry rile-up** (+24% energy, once).
+  Gyarados attacks the same (basic short tell / special long tell). Foe wind-up /
+  dodge window ~1.15s (basic) / 1.8s (special). Gyarados **submerge-dodges**
+  (~28%) and, once at ≤30% HP, **dives → heals ~45% → re-emerges stronger**
+  (power ×1.35, plays Dragon Dance). Pikachu at ≤18% gets an **angry rile-up**
+  (+24% energy, once).
+- **Move delivery:** each Pikachu move travels to the boss (`pikaFire` →
+  `bossAimPoint`/`bossImpact`): `bolt` (Thunderbolt, G-Max) = lightning arc,
+  `orb` (Electro Ball, Electroweb) = a flying energy ball (`shots`/`drawShots`),
+  `dash` (Quick Attack, Iron Tail) = Pikachu lunges in (`pikaLunge`, duel only).
+- **Scroll freeze:** the `world` scroll stops during a duel (it's a stand-off),
+  so the foreground grass doesn't slide; lake ripples shimmer on a clock instead.
 - **Controls:** circular move buttons (icons + cost/`FAST`/`POWER` + `Z X C V B`
-  key chips); 3 dodge arrows during a wind-up (`◀ ▲ ▶`, any one dodges).
+  key chips); 3 **big centred** dodge arrows during a wind-up (`◀ ▲ ▶`, any one
+  dodges) — distinct from the bottom-right move bar so they read on mobile.
 - **Animations:** Pikachu 4-frame move sequences (`pika_seq_*`); real 4-frame
   dodge roll (`pika_roll*`); Gyarados Dragon Dance / Waterfall / Ice Fang
   (`gyara_seq_*`). Ash poses (ready/point/punch) driven by battle beats.
@@ -100,6 +108,10 @@ L3–L5 are still classic.
   (Fullscreen API). Purely for testing in a mobile browser; auto-hidden when the
   API is unsupported or when running as an installed PWA (`display-mode:
   standalone`). Refreshes `RENDER_SCALE` on `fullscreenchange`.
+- **Dev jump menu** — a DOM `#devjump` `<select>` on the start screen (gated by
+  the `DEV` flag, default on; set `false` for release). Jumps straight to any
+  level's play section or its boss fight via `devJump(kind, idx)`. Shown only on
+  the menu screen.
 - **`tools/selftest.js`** — headless guard. Run `node tools/selftest.js` before
   pushing gameplay / load-order changes. It (1) *executes* the inline script
   under DOM/canvas/Audio stubs to catch load-time errors a plain parse misses
