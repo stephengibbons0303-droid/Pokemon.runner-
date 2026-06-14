@@ -100,7 +100,8 @@ Cast: Ash (4 poses), Pikachu (run / jump / roll / 4 move sequences), Gyarados
   `galmoltres.png`; Gyarados move animations `gyara_seq_dd/wf/if.png`.
 - **Ash:** `ash_ready/point/punch/neutral.png`.
 - **Audio:** music `music.mp3`, `music2.mp3`, `levelup.mp3`; Gyarados
-  `gyara_roar/roar2/cry.mp3`; Pikachu `pika_voice/cry/thunder/angry.mp3`; Ash
+  `gyara_roar/roar2/cry.mp3`; Lucario `luca_growl/aura/energy.mp3`; Pikachu
+  `pika_voice/cry/thunder/angry.mp3`; Ash
   `ash_hey/battlehuh/wannabattle/spirit/dobest/counton.mp3`.
 
 See `PROGRESS.md` for current status, open items, and how the sprite-sheet
