@@ -4,7 +4,7 @@ Working notes for **Spark Run — Maths Adventure**. All game code lives in
 `sparkrunmath.html` (single inline `<script>`). Branch:
 `claude/pokemon-math-game-v1-txqzrt`.
 
-_Last updated: 2026-06-13._
+_Last updated: 2026-06-14._
 
 ## Done
 
@@ -17,6 +17,10 @@ _Last updated: 2026-06-13._
 - Speed run (×1.5, ⅓ less time) on a 5-streak — difficulty unchanged.
 - Wrong answer: dazed Pikachu wobble + dust/stars (`oopsPuff`).
 - Pause button + `P`/`Esc`; music pauses too.
+- **Asymmetric jump arc:** a soft eased rise, a brief hover at the apex
+  (`JUMP_HANG`), then a gravity-accelerated drop (`JUMP_GRAV`) so the descent is
+  steeper than the climb. Scoped to answer-lane landings (`gravFall`); duel
+  dodges keep the quick symmetric ease.
 
 ### Scenery
 - Multi-layer parallax driven by one `world` scroll accumulator.

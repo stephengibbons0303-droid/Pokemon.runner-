@@ -227,6 +227,12 @@ function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move 
 const FLOOR_Y = 472;
 const LANE_Y  = [430, 318, 206];        // [ground, mid, high] = creature CENTER y
 const PLAYER_X = 232;                    // creature x (also the "choice line")
+// Jump trajectory feel: a springy eased rise, a brief float at the apex, then a
+// gravity-accelerated drop. The descent is asymmetric — steeper than the ascent
+// (as if drag bled off the climb but not the fall).
+const RISE_EASE = 11;                     // eased-rise rate toward a raised lane
+const JUMP_HANG = 0.16;                   // seconds to hover at the apex before dropping
+const JUMP_GRAV = 2800;                   // downward acceleration (px/s²) for the drop
 const CARD_W = 122, CARD_H = 100;        // answer container size
 
 /* ---------- palette ---------- */
@@ -395,7 +401,8 @@ let levelIdx=0, stepInLvl=0, score=0, streak=0, hearts=3;
 let prizes=[];              // collected sparks per level
 
 const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0, frameT:0, frame:0,
-                 air:false, reachedApex:false, jumpT:0, jumpFrame:0 };
+                 air:false, reachedApex:false, jumpT:0, jumpFrame:0,
+                 vy:0, hangT:0, gravFall:false };   // apex-hover timer + drop velocity for the asymmetric fall
 let gate=null;              // {x, choices:[..], correct, locked, result}
 let speed=120;             // px/sec the gate approaches (ramps)
 let trail=[];              // sparkle particles
@@ -780,8 +787,24 @@ function update(dt){
   player.frameT += dt*(running?12:7);
   player.frame = Math.floor(player.frameT)%pika.frames;
   if(player.moodT>0){ player.moodT-=dt; if(player.moodT<=0) player.mood='run'; }
-  // ease creature toward its lane height (rise on jump, fall on land)
-  player.y += (player.targetY - player.y)*Math.min(1,dt*11);
+  // move the creature toward its lane height. Rising is a soft, springy ease;
+  // the answer-lane drop (gravFall) hovers briefly then accelerates down under
+  // gravity, so the descent is steeper than the climb. Other falls (duel dodge)
+  // keep the quick symmetric ease so dodging stays snappy.
+  if(player.targetY < player.y - 0.5){            // climbing to a raised lane
+    player.y += (player.targetY - player.y)*Math.min(1,dt*RISE_EASE);
+    player.vy=0; player.hangT=0;
+  } else if(player.targetY > player.y + 0.5){      // dropping back toward the ground
+    if(player.gravFall){
+      if(player.hangT < JUMP_HANG){ player.hangT += dt; }   // float at the apex first
+      else { player.vy += JUMP_GRAV*dt; player.y += player.vy*dt; }   // then accelerate down
+      if(player.y >= player.targetY){ player.y=player.targetY; player.vy=0; }
+    } else {
+      player.y += (player.targetY - player.y)*Math.min(1,dt*RISE_EASE);
+    }
+  } else {                                         // settled in a lane
+    player.y=player.targetY; player.vy=0; player.hangT=0; player.gravFall=false;
+  }
 
   // ----- jump animation: rise through frames, then hold the apex pose -----
   if(player.air){
@@ -819,7 +842,7 @@ function update(dt){
       const chosen=gate.choices[player.lane];
       gate.result=(chosen===gate.ans);
       gate.resolveT=0.9;
-      player.targetY=LANE_Y[0];      // gate's passed — fall back to the ground
+      player.targetY=LANE_Y[0]; player.gravFall=true;   // gate's passed — hover, then drop back to the ground
       if(gate.result){
         score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
         Audio8.sfx('good'); flash={a:0.42,col:'#c9ffe0'};
@@ -870,7 +893,7 @@ function update(dt){
     } else if(bossChal){
       bossChal.x -= bossSpeed*dt;
       if(!bossChal.locked && bossChal.x<=PLAYER_X){
-        bossChal.locked=true; bossChal.resolveT=0.7; player.targetY=LANE_Y[0];
+        bossChal.locked=true; bossChal.resolveT=0.7; player.targetY=LANE_Y[0]; player.gravFall=true;
         bossChal.result=(player.lane===bossChal.correctLane);
         if(bossChal.result){
           let m=curMove(); if(!canCast(m)) m=PIKA_MOVES[0];        // safety fallback to Quick Attack
