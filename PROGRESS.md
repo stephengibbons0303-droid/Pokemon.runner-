@@ -33,7 +33,12 @@ _Last updated: 2026-06-14._
   (bottom-left) + move bar (bottom-right); **projectiles now reach the boss**
   (bolt / orb / dash via `pikaFire`/`bossAimPoint`); dev jump menu.
 - Intro reworked to **three Ash↔Pikachu exchanges → roar → "Ready to battle?"**;
-  removed the on-screen dialogue box.
+  removed the on-screen dialogue box. Intro beats are now **chained on audio
+  completion** (`tickIntro` waits for each clip's `ended` + a gap) so voices
+  never overlap; `voice()` returns its `<audio>` element to drive this.
+- Duel polish: Pikachu & Ash **planted on the floor, no idle sway**
+  (`DUEL_PIKA_DROP`, `still` flag on `drawCreature`, Ash bob removed); lighter
+  lair dusk tint so the bank reads clearly.
 - **L1 + L2 questions** converted to the 3-stage curated pools.
 
 ## Open items / TODO
@@ -44,7 +49,12 @@ _Last updated: 2026-06-14._
   reach/size feel; revisit the floor (46px), `CTRL_PAD`, and zone widths.
 - **Balance tuning** (first-pass, untested): energy 100 each; move dmg 10/15;
   dive at 30% HP heals 45%; submerge/sidestep-dodge 28%; rile at 18%; foe
-  wind-ups 1.15s/1.8s; intro ~10.7s (has skip).
+  wind-ups 1.15s/1.8s. Intro now audio-paced (no fixed length).
+- **Ash "transparency"** reported in the L1 duel: investigated — the committed
+  `ash_*.png` are 100% opaque (binary alpha) and `cleanSprite` removes 0 of his
+  pixels, so the asset/code are intact. Lightened the lair dusk tint as the
+  likely cause (dimming). If he still looks see-through, suspect a stale
+  deployed asset / browser cache, not the source.
 - **Earthquake** sheet missing — Gyarados's 4th move falls back to a static
   image. Same for non-sequenced Pikachu moves (Charm, Reflect, G-Max) — they
   animate only once 2×2 sheets are supplied.

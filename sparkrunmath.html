@@ -314,6 +314,9 @@ function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move 
 const FLOOR_Y = 472;
 const LANE_Y  = [430, 318, 206];        // [ground, mid, high] = creature CENTER y
 const PLAYER_X = 232;                    // creature x (also the "choice line")
+// in a duel Pikachu stands still on the ground: drop him so his feet meet the
+// floor line (run baseline leaves a ~14px gap that reads as "floating").
+const DUEL_PIKA_DROP = 16;
 // Timed-jump feel: a tap launches a real arc — a springy eased rise, a brief
 // hover at the apex, then a gravity-accelerated drop. The descent is asymmetric
 // (steeper than the climb). Pikachu does NOT hold the lane: you must time the
@@ -434,7 +437,8 @@ function voice(file, vol, chan){
     a.volume = vol==null?0.9:vol; a.currentTime=0;
     if(chan){ const prev=VCHAN[chan]; if(prev && prev!==a){ try{prev.pause();}catch(e){} } VCHAN[chan]=a; }
     if(!Audio8.isMuted()) a.play().catch(()=>{});
-  }catch(e){}
+    return a;
+  }catch(e){ return null; }
 }
 
 /* ============================================================
@@ -561,7 +565,8 @@ let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX 
 // no-math lair duel (Gyarados): a static confrontation — chat, then tap moves vs. dodge attacks
 let bossMode='classic';        // 'duel' = lair fight, else the classic scrolling-math boss
 let bossPhase='';              // duel: 'intro' (scripted) | 'battle'
-let introT=0, introIdx=0, introReady=false, introSteps=[];   // timed intro cutscene (sounds in sequence)
+let introReady=false, introBeats=[], introI=0, introState='idle';   // intro cutscene: beats chained on audio completion
+let introWaitT=0, introMax=0, introGapAfter=0, introEnded=true, introCur=null;
 let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
@@ -594,7 +599,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introState='idle'; introI=0; introBeats=[]; introCur=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -667,32 +672,48 @@ let ashPose='ready', ashPoseT=0;
 function ashShow(pose,dur){ ashPose=pose; ashPoseT=dur; }   // momentary pose, reverts after dur
 // scripted pre-fight: three Ash↔Pikachu coaching exchanges (Ash encourages,
 // Pikachu replies each time) → the foe roars and Pikachu answers → "Ready to
-// battle?". No on-screen dialogue box — it's all voice + Ash poses.
+// battle?". Beats are CHAINED: each clip finishes (plus a short gap) before the
+// next plays, so the voices never overlap. No on-screen dialogue box.
 function buildIntro(cfg){
   const ash=[ASH_HEY, ASH_WANNA, ASH_SPIRIT, ASH_BEST, ASH_COUNT].sort(()=>Math.random()-0.5).slice(0,3);
   const reply=[PIKA_VOICE, PIKA_CRY, PIKA_VOICE];
-  introSteps=[
-    // 1st exchange
-    { t:0.4, fn:()=>{ ashSay(ash[0]); ashShow('point',1.1); } },
-    { t:1.7, fn:()=>{ voice(reply[0],0.9,'pika'); } },
-    // 2nd exchange
-    { t:3.0, fn:()=>{ ashSay(ash[1]); ashShow('point',1.1); } },
-    { t:4.3, fn:()=>{ voice(reply[1],0.9,'pika'); } },
-    // 3rd exchange
-    { t:5.6, fn:()=>{ ashSay(ash[2]); ashShow('point',1.1); } },
-    { t:6.9, fn:()=>{ voice(reply[2],0.9,'pika'); } },
-    // ready to battle: the foe roars, Pikachu squares up
-    { t:8.4, fn:()=>{ if(cfg.roar) voice(cfg.roar,0.97,'foe'); } },
-    { t:9.7, fn:()=>{ voice(PIKA_ANGRY,0.95,'pika'); ashShow('point',1.2); } },
-    { t:10.7, fn:()=>{ introReady=true; } },     // → "Ready to battle?" prompt; tap to start
+  const ashBeat = f => ({ gap:0.25, fn:()=>{ ashShow('point',2.4); return ashSay(f); } });   // returns the audio element
+  const pikaBeat = (f,v) => ({ gap:0.3, fn:()=>voice(f, v==null?0.9:v, 'pika') });
+  introBeats=[
+    ashBeat(ash[0]), pikaBeat(reply[0]),            // 1st exchange
+    ashBeat(ash[1]), pikaBeat(reply[1]),            // 2nd exchange
+    ashBeat(ash[2]), pikaBeat(reply[2]),            // 3rd exchange
+    { gap:0.3, fn:()=> cfg.roar ? voice(cfg.roar,0.97,'foe') : null },          // foe roars
+    { gap:0.2, fn:()=>{ ashShow('point',1.4); return voice(PIKA_ANGRY,0.95,'pika'); } },  // Pikachu squares up
+    { gap:0,   fn:()=>{ introReady=true; return null; } },                      // → "Ready to battle?" prompt; tap to start
   ];
-  introT=0; introIdx=0; introReady=false;
+  introI=0; introState='idle'; introWaitT=0; introEnded=true; introCur=null; introReady=false;
 }
+// drive the chained beats: play one, wait for its clip to end (with a safety cap
+// in case 'ended' never fires — e.g. muted), pause for the gap, then the next.
 function tickIntro(dt){
-  introT+=dt;
-  while(introIdx<introSteps.length && introT>=introSteps[introIdx].t){ introSteps[introIdx].fn(); introIdx++; }
+  if(introState==='done') return;
+  if(introState==='idle'){
+    if(introI>=introBeats.length){ introState='done'; return; }
+    const b=introBeats[introI++];
+    const a=b.fn ? b.fn() : null;
+    introCur=a; introEnded=!a; introWaitT=0; introGapAfter=(b.gap!=null?b.gap:0.3);
+    // muted → no audio plays, so advance briskly; unmuted → 'ended' drives it,
+    // with a generous cap (real clips end well under it) so nothing is cut short.
+    const muted=Audio8.isMuted();
+    const dur = muted ? 0.8 : ((a && isFinite(a.duration) && a.duration>0) ? a.duration : 4.0);
+    introMax = dur + (muted?0.05:0.45);
+    if(a) a.onended=()=>{ introEnded=true; };
+    introState='wait';
+  } else if(introState==='wait'){
+    introWaitT+=dt;
+    if(introEnded || introWaitT>=introMax){ introWaitT=0; introState='gap'; }
+  } else if(introState==='gap'){
+    introWaitT+=dt;
+    if(introWaitT>=introGapAfter) introState='idle';
+  }
 }
-function skipIntro(){ introIdx=introSteps.length; introReady=true; }   // tap during the cutscene → jump to the prompt
+function skipIntro(){ introState='done'; introReady=true; if(introCur){ try{introCur.pause();}catch(e){} } }   // tap → jump to the prompt
 function duelBegin(){
   if(bossPhase!=='intro') return;
   bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
@@ -1297,10 +1318,10 @@ function drawBackground(){
 }
 
 /* the mascot: Pikachu run / jump sprite (with a soft spark glow) */
-function drawCreature(x,y,mood,stance){
+function drawCreature(x,y,mood,stance,still){
   const airborne = player.air;
   const useStance = !!stance && !airborne && jump.ready;       // crouched pre-battle pose (jump sheet frame 0)
-  const bob = airborne ? 0 : (useStance ? Math.sin(player.bob*0.6)*1.5 : Math.sin(player.bob)*3);  // gentle idle vs run-bob
+  const bob = (airborne||still) ? 0 : (useStance ? Math.sin(player.bob*0.6)*1.5 : Math.sin(player.bob)*3);  // still = planted (no idle sway)
   if(mood==='oops') x += Math.sin(player.moodT*40)*6;    // dazed side-to-side wobble on a wrong answer
   const sheet = (airborne||useStance) && jump.ready ? jump : pika;
   const frameIdx = airborne ? player.jumpFrame : (useStance ? 0 : player.frame);
@@ -1528,7 +1549,7 @@ function drawOver(){
    front surface is drawn OVER his lower body so he reads as partly submerged. */
 const LAKE={x:700, cy:454, rx:362, ry:44};   // near-water surface ellipse
 function drawLairBack(){
-  g.fillStyle='rgba(18,28,58,.34)'; g.fillRect(0,0,W,FLOOR_Y);   // dusk lair mood over the meadow
+  g.fillStyle='rgba(18,28,58,.20)'; g.fillRect(0,0,W,FLOOR_Y);   // light dusk lair mood (kept low so Ash/Pikachu read clearly)
   g.save();                                                      // basin behind the foe
   g.fillStyle='#1d4576'; g.beginPath(); g.ellipse(LAKE.x, LAKE.cy+8, LAKE.rx+14, LAKE.ry+14, 0,0,7); g.fill();
   g.restore();
@@ -1619,14 +1640,15 @@ function drawDodgePrompt(){
   g.save(); g.globalAlpha=0.22*a; g.fillStyle='#9fd8ff'; g.fillRect(0,0,W,14); g.fillRect(0,H-14,W,14); g.restore();
   g.textAlign='left';
 }
-// Ash coaches from the bank, to Pikachu's left (pose set by battle beats)
+// Ash coaches from the bank, to Pikachu's left (pose set by battle beats).
+// Planted on the ground, no idle sway.
 function drawAsh(){
   const spr=bossSprite(ASH_SPR[ashPose]||ASH_SPR.ready);
   if(!(spr&&spr.ready)) return;
-  const im=spr2d(spr), s=ASH_H/im.height, w=im.width*s, bob=Math.sin(player.bob*0.5)*2;
+  const im=spr2d(spr), s=ASH_H/im.height, w=im.width*s;
   g.save();
   g.fillStyle='rgba(0,0,0,.18)'; g.beginPath(); g.ellipse(ASH_X, FLOOR_Y+8, w*0.34, 8, 0,0,7); g.fill();
-  g.imageSmoothingEnabled=true; g.drawImage(im, ASH_X-w/2, FLOOR_Y+6+bob-ASH_H, w, ASH_H);
+  g.imageSmoothingEnabled=true; g.drawImage(im, ASH_X-w/2, FLOOR_Y+6-ASH_H, w, ASH_H);
   g.restore();
 }
 // a labelled energy bar; turns red when critical (≤10%). right=true anchors the fill to the right.
@@ -1659,14 +1681,15 @@ function drawDuel(){
   if(dodgeWin>0) drawDodgeWave();
   drawZaps(); drawShots();   // bolts + flying orbs
   drawAsh();                // trainer on the bank
+  const py = player.y + DUEL_PIKA_DROP;   // duel: planted on the floor line
   if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=28+p*30;   // charging glow on a special
-    g.save(); g.globalAlpha=0.5*p; const gx=g.createRadialGradient(PLAYER_X+pikaDX,player.y-6,4,PLAYER_X+pikaDX,player.y-6,gr);
+    g.save(); g.globalAlpha=0.5*p; const gx=g.createRadialGradient(PLAYER_X+pikaDX,py-6,4,PLAYER_X+pikaDX,py-6,gr);
     gx.addColorStop(0,'#fff7b0'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
-    g.beginPath(); g.arc(PLAYER_X+pikaDX,player.y-6,gr,0,7); g.fill(); g.restore(); }
-  if(pikaShield>0) drawShield(PLAYER_X+pikaDX, player.y);
+    g.beginPath(); g.arc(PLAYER_X+pikaDX,py-6,gr,0,7); g.fill(); g.restore(); }
+  if(pikaShield>0) drawShield(PLAYER_X+pikaDX, py);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
-  else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, player.y)){}    // tumbling roll-dodge
-  else drawCreature(PLAYER_X+pikaDX, player.y, player.mood, true);   // crouched stance (offset while rolling)
+  else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, py)){}    // tumbling roll-dodge
+  else drawCreature(PLAYER_X+pikaDX, py, player.mood, true, true);   // crouched, planted (no sway)
   drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
   // controls (always on during battle): dodge arrows bottom-left, move buttons bottom-right
   if(bossPhase==='battle'){ drawDodgeButtons(); drawMoveBar(); }
@@ -1930,15 +1953,16 @@ function drawMoveBar(){
 }
 function drawPikaAttack(){
   const a=pikaAtk, p=Math.min(1,a.t/a.dur), seq=moveSeq(a.m);
+  const off = (bossMode==='duel') ? DUEL_PIKA_DROP : 0;   // keep the move grounded in a duel
   if(seq && seq.ready){                                   // animated 4-frame sequence (replaces Pikachu's body)
     const fi=Math.min(seq.n-1, Math.floor(p*seq.n));
-    const s=seq.h/seq.ch, w=seq.cw*s, feet=player.y+28, x=PLAYER_X+pikaDX-w*seq.ax, y=feet-seq.h;
+    const s=seq.h/seq.ch, w=seq.cw*s, feet=player.y+28+off, x=PLAYER_X+pikaDX-w*seq.ax, y=feet-seq.h;
     g.save(); g.imageSmoothingEnabled=true;
     g.drawImage(seq.img, fi*seq.cw,0,seq.cw,seq.ch, x, y, w, seq.h);
     g.restore(); return;
   }
   const im=spr2d(a.spr); const h=176, w=im.width*(h/im.height);   // fallback: single move image
-  const x=PLAYER_X+pikaDX - w*0.34 + p*26, y=player.y - h*0.55;
+  const x=PLAYER_X+pikaDX - w*0.34 + p*26, y=player.y - h*0.55 + off;
   g.save(); g.globalAlpha=Math.min(1,(1-p)*1.7+0.22);
   g.imageSmoothingEnabled=true; g.drawImage(im, x, y, w, h);
   g.restore();
