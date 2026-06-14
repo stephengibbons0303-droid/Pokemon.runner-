@@ -29,7 +29,7 @@ level (per `LEVELS` in the source):
 
 | Level | Scene | Operation |
 |------:|-------|-----------|
-| 1 | Bloom Meadow | Addition (eases in: `1+n` → single digits → two-digit no-carry → round doubles). Boss-style ramp ends with two-digit + single-digit crossers. |
+| 1 | Bloom Meadow | Addition in 3 fixed-difficulty stages (random, no repeats): Q1–8 single digit (≤9), Q9–17 teens/twenties, Q18–25 two-digit + two-digit (no carry, <100). |
 | 2 | Orchard Hop | Subtraction only |
 | 3 | Bubble Bay | Mix of + and − (two-digit, carry/borrow) |
 | 4 | Crystal Caves | Multiplication only (2/5/10, widening to 3/4) |

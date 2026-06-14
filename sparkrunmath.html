@@ -447,20 +447,36 @@ function voice(file, vol, chan){
    ============================================================ */
 const rnd=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const pick=a=>a[Math.floor(Math.random()*a.length)];
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=arr[i]; arr[i]=arr[j]; arr[j]=t; } return arr; }
+// draw without repeats: keep a shuffled "bag" per key, refill when empty (reset per level)
+let QBAG={};
+function drawQ(pool, key){ let b=QBAG[key]; if(!b||!b.length) b=QBAG[key]=shuffle(pool.slice()); return b.pop(); }
+
+// Level 1 addition pools, in three difficulty stages (random, non-repeating draws):
+//   stage 0 = questions 1–8   (single digit, answers ≤ 9)
+//   stage 1 = questions 9–17  (sums into the teens/twenties)
+//   stage 2 = questions 18–25 (two-digit + two-digit, no carry, under 100)
+const L1_POOLS = [
+  [[4,3],[6,2],[1,8],[5,4],[3,3],[7,1],[2,4],[4,2],[1,5],[5,3],
+   [5,2],[1,6],[3,4],[2,7],[4,5],[8,1],[3,6],[6,3],[2,3],[7,2]],
+  [[8,7],[9,6],[7,5],[12,4],[15,8],[10,11],[18,6],[6,8],[19,5],[15,10],
+   [11,6],[14,5],[13,8],[9,9],[16,7],[12,13],[17,9],[14,14],[8,15],[11,17]],
+  [[23,14],[51,27],[34,44],[62,15],[83,16],[11,78],[45,24],[22,56],[76,12],[31,48],
+   [55,33],[14,82],[47,21],[65,34],[81,17],[42,35],[15,63],[71,18],[26,42],[54,23],
+   [37,51],[64,14],[85,12],[13,36],[46,41],[28,61],[73,25],[52,37],[17,81],[33,45]],
+];
 
 // each level is a 25-question run: gen(step 0..24) -> {q,ans}.
 // optional bossGen() gives the end-of-level duel its own flavour of questions.
 const LEVELS = [
   { name:'Bloom Meadow',  theme:'balloon', count:25,
-    // L1 — addition, eased in: a couple of "1 + n", then single digits, then
-    // two-digit + two-digit with NO carrying (23+23, 17+11), and only at the
-    // end do carrying sums arrive as friendly round doubles (25+25, 45+45).
+    // L1 — addition in three difficulty stages, drawn at random (no repeats) from
+    // fixed pools: Q1–8 single digit (≤9), Q9–17 into the teens/twenties,
+    // Q18–25 two-digit + two-digit (no carry, under 100).
     gen:s=>{
-      if(s<2){ const b=rnd(1,4); return {q:`1 + ${b}`, ans:1+b}; }
-      if(s<10){ const a=rnd(2,6), b=rnd(2,6); return {q:`${a} + ${b}`, ans:a+b}; }
-      if(s<19){ const ta=rnd(1,2), tb=rnd(1,2), ua=rnd(0,9), ub=rnd(0,9-ua);   // no carry: units sum ≤ 9
-                const a=ta*10+ua, b=tb*10+ub; return {q:`${a} + ${b}`, ans:a+b}; }
-      const a=pick([15,25,35,45,55]), b=pick([15,25,35,45,55]); return {q:`${a} + ${b}`, ans:a+b}; },
+      const stage = s<8 ? 0 : s<17 ? 1 : 2;
+      const pair = drawQ(L1_POOLS[stage], 'L1_'+stage);
+      const [a,b] = pair; return {q:`${a} + ${b}`, ans:a+b}; },
     // boss — two-digit + single-digit, usually bridging a ten (46+5, 81+9…)
     bossGen:()=>{ const a=rnd(21,89), b=rnd(4,10); return {q:`${a} + ${b}`, ans:a+b}; } },
   { name:'Orchard Hop',   theme:'apple', count:25,
@@ -564,6 +580,7 @@ function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
+  QBAG={};                                                         // fresh non-repeating question bags
   groundPlayer();
   spawnGate();
 }
