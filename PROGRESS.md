@@ -28,13 +28,14 @@ _Last updated: 2026-06-14._
     `PIKA_REACH_DN 42` up his body, since his y-anchor sits near his feet) to
     overlap the balloon band (`overlapsBalloon`). Much more of the character
     counts than a single point.
-  - *Horizontal/time:* instead of one instant, a hit registers if that overlap
-    with the **correct** balloon happens at ANY frame while the balloon passes
-    over him — window `±(CARD_W/2 + PIKA_HALF_W 36)`, locked once it's `SCORE_LATE
-    40`px past centre. So early/late timing both forgive; you still miss if you
-    never reach the lane.
+  - *Horizontal/time:* the hit locks the **instant** Pikachu's band overlaps the
+    **correct** balloon while it's passing over him (sprites overlap within
+    `±(CARD_W/2 + PIKA_HALF_W 36)`) — responsive and forgiving (pre-positioned,
+    on-arrival, and reaction-late jumps all register). A miss only locks once the
+    balloon has fully passed without contact. You still miss if you never reach
+    the lane.
   Tuning knobs: `RISE_EASE 9`, `JUMP_HANG 0.44`, `JUMP_GRAV 3400`,
-  `PIKA_REACH_UP/DN`, `PIKA_HALF_W`, `SCORE_LATE` — all first-pass, dial by feel.
+  `PIKA_REACH_UP/DN`, `PIKA_HALF_W` — all first-pass, dial by feel.
 
 ### Scenery
 - Multi-layer parallax driven by one `world` scroll accumulator.
