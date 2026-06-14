@@ -19,19 +19,22 @@ _Last updated: 2026-06-14._
 - Pause button + `P`/`Esc`; music pauses too.
 - **Timed jump (skill).** A tap launches a real arc — gentle eased rise
   (`RISE_EASE`) → brief apex hover (`JUMP_HANG`) → gravity-accelerated, steeper
-  fall (`JUMP_GRAV`). Pikachu no longer *holds* the lane: you must time the jump
-  so he's at the right height when the answer card reaches him. The pick is
-  scored from his actual height via a grace-tracked "highest lane touched
-  recently" (`scoreLane`/`peakLane`, window `GRACE_T`) so a card arriving just
-  after the apex still counts — forgiving for ages 6–8. Double-tap = double jump
-  to the high lane; you can re-jump to re-time while a card approaches. The duel
-  dodge-hop is unaffected (separate code path; `player.jumping` gates the arc).
-  Tuning knobs: `RISE_EASE 9`, `JUMP_HANG 0.44`, `JUMP_GRAV 3400`, `GRACE_T 0.26`.
-  The hit test is an **overlap of two bands**: the answer balloon
-  (`BALLOON_HALF`) vs Pikachu's catch band up his body (`PIKA_REACH_UP 52` /
-  `PIKA_REACH_DN 42`, since his y-anchor sits near his feet) — the highest
-  overlapping lane wins. Bigger reach = more forgiving. All first-pass, expect
-  to dial by feel on device.
+  fall (`JUMP_GRAV`). Pikachu no longer *holds* the lane: you must jump so he
+  meets the answer balloon as it passes. Double-tap = double jump to the high
+  lane; you can re-jump to re-time while a card approaches. The duel dodge-hop is
+  unaffected (separate code path; `player.jumping` gates the arc).
+- **Scoring = 2-D pass-over overlap (forgiving).** Two parts:
+  - *Vertical:* a hit needs Pikachu's catch band (`PIKA_REACH_UP 52` /
+    `PIKA_REACH_DN 42` up his body, since his y-anchor sits near his feet) to
+    overlap the balloon band (`overlapsBalloon`). Much more of the character
+    counts than a single point.
+  - *Horizontal/time:* instead of one instant, a hit registers if that overlap
+    with the **correct** balloon happens at ANY frame while the balloon passes
+    over him — window `±(CARD_W/2 + PIKA_HALF_W 36)`, locked once it's `SCORE_LATE
+    40`px past centre. So early/late timing both forgive; you still miss if you
+    never reach the lane.
+  Tuning knobs: `RISE_EASE 9`, `JUMP_HANG 0.44`, `JUMP_GRAV 3400`,
+  `PIKA_REACH_UP/DN`, `PIKA_HALF_W`, `SCORE_LATE` — all first-pass, dial by feel.
 
 ### Scenery
 - Multi-layer parallax driven by one `world` scroll accumulator.

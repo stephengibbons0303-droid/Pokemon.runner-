@@ -292,7 +292,6 @@ const PLAYER_X = 232;                    // creature x (also the "choice line")
 const RISE_EASE = 9;                       // eased-rise rate — lower = gentler / floatier climb
 const JUMP_HANG = 0.44;                    // seconds to hover at the apex before dropping ("a short time")
 const JUMP_GRAV = 3400;                    // downward acceleration (px/s²) — higher = steeper, snappier fall
-const GRACE_T   = 0.26;                    // scoring grace: how long the highest lane touched still counts
 // Which lane Pikachu counts as, from his y anchor. Rather than testing a single
 // point, we give him a vertical CATCH BAND (an area up his body, since his anchor
 // sits near his feet) and register the highest lane whose balloon band that catch
@@ -300,16 +299,17 @@ const GRACE_T   = 0.26;                    // scoring grace: how long the highes
 // (CARD_H is read lazily inside the function — it's declared further down.)
 const PIKA_REACH_UP = 52;                  // catch area above the anchor (toward head) — bigger = more forgiving
 const PIKA_REACH_DN = 42;                  // catch area below the anchor (toward feet) — keeps a lane registered longer on the way down
+const PIKA_HALF_W   = 36;                  // Pikachu's horizontal half-width — sets how long the balloon "passes over" him
+const SCORE_LATE    = 40;                  // px past centre he can still catch a passing balloon (late grace)
+function overlapsBalloon(y, L){            // does Pikachu's vertical catch band overlap lane L's balloon band?
+  const bh=CARD_H/2, top=LANE_Y[L]-bh, bot=LANE_Y[L]+bh;
+  return y-PIKA_REACH_UP <= bot && y+PIKA_REACH_DN >= top;
+}
 function laneFromY(y){
-  const bh=CARD_H/2;                        // half the answer balloon's height
-  for(let L=2; L>=1; L--){                  // prefer the higher lane on any overlap
-    const top=LANE_Y[L]-bh, bot=LANE_Y[L]+bh;
-    if(y-PIKA_REACH_UP <= bot && y+PIKA_REACH_DN >= top) return L;
-  }
+  for(let L=2; L>=1; L--){ if(overlapsBalloon(y,L)) return L; }   // prefer the higher lane on any overlap
   return 0;                                 // no balloon overlap → ground lane
 }
 function liveLane(){ return laneFromY(player.y); }            // the lane Pikachu is at right now
-function scoreLane(){ return player.peakLane; }               // grace-tracked lane used to score the card
 const CARD_W = 122, CARD_H = 100;        // answer container size
 
 /* ---------- palette ---------- */
@@ -479,8 +479,7 @@ let prizes=[];              // collected sparks per level
 
 const player = { lane:0, y:LANE_Y[0], targetY:LANE_Y[0], bob:0, hopT:0, mood:'run', moodT:0, frameT:0, frame:0,
                  air:false, reachedApex:false, jumpT:0, jumpFrame:0,
-                 vy:0, hangT:0, jumping:false, descending:false,   // timed-jump arc state
-                 peakLane:0, peakT:0 };                            // highest lane touched recently (scoring grace)
+                 vy:0, hangT:0, jumping:false, descending:false };   // timed-jump arc state
 let gate=null;              // {x, choices:[..], correct, locked, result}
 let speed=120;             // px/sec the gate approaches (ramps)
 let trail=[];              // sparkle particles
@@ -547,7 +546,7 @@ function spawnGate(){
   // slow at first; ramps with step and level, but capped so a 25-question run stays fair
   const base=92 + levelIdx*16;
   speed = base + Math.min(90, stepInLvl*5);
-  gate={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
+  gate={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0, hit:false };
   groundPlayer();
 }
 
@@ -750,7 +749,7 @@ function spawnChallenge(){
   // boss uses its own question style if defined, else the level's hardest stretch
   const {q,ans} = L.bossGen ? L.bossGen() : L.gen(rnd(Math.floor(L.count*0.6), L.count-1));
   const choices=makeChoices(ans);
-  bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
+  bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0, hit:false };
 }
 // Pikachu unleashes the equipped move on the boss
 function pikaFire(m){
@@ -773,7 +772,7 @@ function bossDefeated(){
 function groundPlayer(){
   player.lane=0; player.y=LANE_Y[0]; player.targetY=LANE_Y[0];
   player.air=false; player.reachedApex=false; player.jumping=false; player.descending=false;
-  player.vy=0; player.hangT=0; player.jumpT=0; player.peakLane=0; player.peakT=0;
+  player.vy=0; player.hangT=0; player.jumpT=0;
 }
 function landJump(){ groundPlayer(); }   // arc finished — back on the ground, ready to jump again
 
@@ -914,15 +913,6 @@ function update(dt){
     }
   }
 
-  // timed-jump scoring grace: remember the highest lane Pikachu touched recently, so a card
-  // arriving just after he leaves the apex still counts (forgiving for young players).
-  if(runState){
-    const ln=laneFromY(player.y);
-    if(ln>=player.peakLane){ player.peakLane=ln; player.peakT=GRACE_T; }
-    else if(player.peakT>0){ player.peakT-=dt; if(player.peakT<=0) player.peakLane=ln; }
-    else player.peakLane=ln;
-  }
-
   // trail sparkles
   if(state==='play'||state==='levelup'||state==='boss'){
     if(Math.random()<0.6) trail.push({x:PLAYER_X-18,y:player.y+10,vx:-30-Math.random()*40,vy:(Math.random()-0.5)*30,life:0.5,r:2+Math.random()*3,c:Math.random()<0.5?C.glow:C.spark});
@@ -939,12 +929,15 @@ function update(dt){
 
   if(state==='play' && gate){
     gate.x -= speed*speedMul*dt;
-    if(!gate.locked && gate.x <= PLAYER_X){
-      // lock in the answer at the lane Pikachu is actually at right now (timed jump)
+    // Score over the whole time the balloon passes over Pikachu: if his catch band overlaps
+    // the CORRECT balloon at ANY frame while it's over him, it's a hit (forgiving in time, not
+    // a single instant). cardCx = balloon centre; the pass window spans ±(half balloon + half Pikachu).
+    const cardCx=gate.x+CARD_W/2, passHalf=CARD_W/2+PIKA_HALF_W;
+    if(!gate.locked && Math.abs(cardCx-PLAYER_X)<=passHalf && overlapsBalloon(player.y, gate.correctLane)) gate.hit=true;
+    if(!gate.locked && cardCx <= PLAYER_X-SCORE_LATE){   // balloon has passed him → lock the result
       gate.locked=true;
-      gate.pickLane=scoreLane();
-      const chosen=gate.choices[gate.pickLane];
-      gate.result=(chosen===gate.ans);
+      gate.result=gate.hit;
+      gate.pickLane=gate.hit?gate.correctLane:liveLane();   // which card to flag on the reveal
       gate.resolveT=0.9;
       if(player.jumping) player.descending=true;        // card's passed — drop back to the ground
       if(gate.result){
@@ -996,10 +989,12 @@ function update(dt){
       updateDuel(dt);                          // lair duel: dialogue then move-vs-dodge
     } else if(bossChal){
       bossChal.x -= bossSpeed*dt;
-      if(!bossChal.locked && bossChal.x<=PLAYER_X){
+      const cardCx=bossChal.x+CARD_W/2, passHalf=CARD_W/2+PIKA_HALF_W;   // same pass-over scoring as the runner
+      if(!bossChal.locked && Math.abs(cardCx-PLAYER_X)<=passHalf && overlapsBalloon(player.y, bossChal.correctLane)) bossChal.hit=true;
+      if(!bossChal.locked && cardCx <= PLAYER_X-SCORE_LATE){
         bossChal.locked=true; bossChal.resolveT=0.7; if(player.jumping) player.descending=true;
-        bossChal.pickLane=scoreLane();
-        bossChal.result=(bossChal.pickLane===bossChal.correctLane);
+        bossChal.result=bossChal.hit;
+        bossChal.pickLane=bossChal.hit?bossChal.correctLane:liveLane();
         if(bossChal.result){
           let m=curMove(); if(!canCast(m)) m=PIKA_MOVES[0];        // safety fallback to Quick Attack
           charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
