@@ -290,13 +290,17 @@ const PLAYER_X = 232;                    // creature x (also the "choice line")
 // (steeper than the climb). Pikachu does NOT hold the lane: you must time the
 // jump so he is at the right height when the answer card reaches him.
 const RISE_EASE = 9;                       // eased-rise rate — lower = gentler / floatier climb
-const JUMP_HANG = 0.34;                    // seconds to hover at the apex before dropping ("a short time")
+const JUMP_HANG = 0.44;                    // seconds to hover at the apex before dropping ("a short time")
 const JUMP_GRAV = 3400;                    // downward acceleration (px/s²) — higher = steeper, snappier fall
-const GRACE_T   = 0.22;                    // scoring grace: how long the highest lane touched still counts
-// lane boundaries from a y position (midpoints between the three lane centres)
-const LANE_HI_MID = (LANE_Y[2]+LANE_Y[1])/2;   // 262: above this = high lane
-const LANE_MID_LO = (LANE_Y[1]+LANE_Y[0])/2;   // 374: above this = mid lane
-function laneFromY(y){ return y<=LANE_HI_MID ? 2 : (y<=LANE_MID_LO ? 1 : 0); }
+const GRACE_T   = 0.26;                    // scoring grace: how long the highest lane touched still counts
+// Which lane Pikachu counts as, from his y. The thresholds sit at the midpoints
+// between lane centres, then shift toward the ground by CATCH_DROP so the catch
+// area is generous: a higher lane registers with less rise and stays registered
+// longer through the arc (you don't have to be dead-centre on the balloon).
+const LANE_HI_MID = (LANE_Y[2]+LANE_Y[1])/2;   // 262: midpoint between high & mid centres
+const LANE_MID_LO = (LANE_Y[1]+LANE_Y[0])/2;   // 374: midpoint between mid & ground centres
+const CATCH_DROP  = 34;                          // bigger catch area — lower = stricter, higher = more forgiving
+function laneFromY(y){ return y<=LANE_HI_MID+CATCH_DROP ? 2 : (y<=LANE_MID_LO+CATCH_DROP ? 1 : 0); }
 function liveLane(){ return laneFromY(player.y); }            // the lane Pikachu is at right now
 function scoreLane(){ return player.peakLane; }               // grace-tracked lane used to score the card
 const CARD_W = 122, CARD_H = 100;        // answer container size
