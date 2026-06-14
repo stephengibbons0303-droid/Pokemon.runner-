@@ -528,7 +528,6 @@ let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX 
 let bossMode='classic';        // 'duel' = lair fight, else the classic scrolling-math boss
 let bossPhase='';              // duel: 'intro' (scripted) | 'battle'
 let introT=0, introIdx=0, introReady=false, introSteps=[];   // timed intro cutscene (sounds in sequence)
-let duelSub=null;              // current intro subtitle line {who,txt} from the boss's cfg.lines
 let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
@@ -561,7 +560,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; duelSub=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introT=0; introIdx=0; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -631,30 +630,37 @@ const ASH_SPR={ ready:'ash_ready.png', point:'ash_point.png', punch:'ash_punch.p
 const ASH_X=108, ASH_H=176;
 let ashPose='ready', ashPoseT=0;
 function ashShow(pose,dur){ ashPose=pose; ashPoseT=dur; }   // momentary pose, reverts after dur
-// scripted intro driven by the boss's cfg.lines: foe greets → Pikachu → foe warns →
-// Pikachu fires up → Ash encourages → "Ready to battle?". Each beat shows a subtitle.
+// scripted pre-fight: three Ash↔Pikachu coaching exchanges (Ash encourages,
+// Pikachu replies each time) → the foe roars and Pikachu answers → "Ready to
+// battle?". No on-screen dialogue box — it's all voice + Ash poses.
 function buildIntro(cfg){
-  const L=cfg.lines||[], enc=pick([ASH_SPIRIT, ASH_BEST, ASH_COUNT]);
-  const sub=i=>{ duelSub = L[i] || null; };
-  const foe=v=>{ if(cfg.roar) voice(cfg.roar, v==null?0.9:v, 'foe'); };
+  const ash=[ASH_HEY, ASH_WANNA, ASH_SPIRIT, ASH_BEST, ASH_COUNT].sort(()=>Math.random()-0.5).slice(0,3);
+  const reply=[PIKA_VOICE, PIKA_CRY, PIKA_VOICE];
   introSteps=[
-    { t:0.3, fn:()=>{ foe(0.95); sub(0); ashShow('ready',0); } },                          // foe greets
-    { t:2.6, fn:()=>{ voice(PIKA_CRY,0.9,'pika'); sub(1); } },                              // Pikachu answers
-    { t:4.2, fn:()=>{ foe(0.8); sub(2); } },                                                // foe warns
-    { t:6.0, fn:()=>{ voice(PIKA_VOICE,0.9,'pika'); sub(3); ashShow('point',1.4); } },      // Pikachu fires up
-    { t:7.6, fn:()=>{ ashSay(enc); ashShow('point',1.7); duelSub=null; } },                 // Ash encourages
-    { t:9.0, fn:()=>{ introReady=true; } },                                                 // → "Ready to battle?"
+    // 1st exchange
+    { t:0.4, fn:()=>{ ashSay(ash[0]); ashShow('point',1.1); } },
+    { t:1.7, fn:()=>{ voice(reply[0],0.9,'pika'); } },
+    // 2nd exchange
+    { t:3.0, fn:()=>{ ashSay(ash[1]); ashShow('point',1.1); } },
+    { t:4.3, fn:()=>{ voice(reply[1],0.9,'pika'); } },
+    // 3rd exchange
+    { t:5.6, fn:()=>{ ashSay(ash[2]); ashShow('point',1.1); } },
+    { t:6.9, fn:()=>{ voice(reply[2],0.9,'pika'); } },
+    // ready to battle: the foe roars, Pikachu squares up
+    { t:8.4, fn:()=>{ if(cfg.roar) voice(cfg.roar,0.97,'foe'); } },
+    { t:9.7, fn:()=>{ voice(PIKA_ANGRY,0.95,'pika'); ashShow('point',1.2); } },
+    { t:10.7, fn:()=>{ introReady=true; } },     // → "Ready to battle?" prompt; tap to start
   ];
-  introT=0; introIdx=0; introReady=false; duelSub=null;
+  introT=0; introIdx=0; introReady=false;
 }
 function tickIntro(dt){
   introT+=dt;
   while(introIdx<introSteps.length && introT>=introSteps[introIdx].t){ introSteps[introIdx].fn(); introIdx++; }
 }
-function skipIntro(){ introIdx=introSteps.length; introReady=true; duelSub=null; }   // tap during the cutscene → jump to the prompt
+function skipIntro(){ introIdx=introSteps.length; introReady=true; }   // tap during the cutscene → jump to the prompt
 function duelBegin(){
   if(bossPhase!=='intro') return;
-  bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0; duelSub=null;
+  bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
   voice(PIKA_CRY,0.9,'pika'); ashShow('point',1.4);
 }
 function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade; }   // hittable only when surfaced
@@ -705,12 +711,13 @@ function doDodge(dir){
          bossMsg = d<0?'Rolled back!':'Rolled forward!'; }
   bossMsgT=0.7;
 }
-// big directional dodge buttons — CENTERED along the bottom (distinct from the
-// bottom-right move bar) and large, so the dodge moment is unmistakable on mobile
+// the 3 directional dodge buttons — a permanent row hugging the bottom-LEFT
+// (mirror of the bottom-right move bar). Always on screen during the battle;
+// they light up while a foe attack is winding up, dim otherwise.
 function dodgeBtnRects(){
   const items=[['back','◀'],['up','▲'],['fwd','▶']];
-  const n=items.length, gap=22, D=rowDiameter(n, gap, 118, W*0.72);
-  const tot=n*D+(n-1)*gap, x0=(W-tot)/2, cy=H-CTRL_PAD-D/2;     // centred thumb-zone
+  const n=items.length, gap=14, D=rowDiameter(n, gap, 84, W*0.42);
+  const cy=H-CTRL_PAD-D/2, x0=CTRL_PAD;                          // bottom-left thumb-zone
   return items.map((it,i)=>{ const x=x0+i*(D+gap);
     return { dir:it[0], glyph:it[1], cx:x+D/2, cy, rad:D/2, x, y:cy-D/2, w:D, h:D }; });
 }
@@ -919,13 +926,8 @@ function onPress(e){
   if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
   if(state==='boss' && bossMode==='duel'){             // lair duel input
     if(bossPhase==='intro'){ if(introReady) duelBegin(); else skipIntro(); return; }   // tap: skip cutscene, then start
-    if(dodgeWin>0){                                             // wind-up: tap a dodge arrow (any one works)
-      for(const r of dodgeBtnRects()){ if(pointInRect(r,p.x,p.y)){ doDodge(r.dir); return; } }
-      return;
-    }
-    for(const r of moveBarRects()){                             // tap a move = cast it at the boss
-      if(pointInRect(r,p.x,p.y)){ castMove(r.m); return; }
-    }
+    for(const r of dodgeBtnRects()){ if(pointInRect(r,p.x,p.y)){ doDodge(r.dir); return; } }   // bottom-left: dodge (only bites during a wind-up)
+    for(const r of moveBarRects()){ if(pointInRect(r,p.x,p.y)){ castMove(r.m); return; } }      // bottom-right: cast a move at the boss
     return;
   }
   if(state==='boss'){                                  // classic boss: tap a move button to equip it (not a jump)
@@ -950,7 +952,7 @@ window.addEventListener('keydown',e=>{
   if(state==='boss' && (e.code in MOVE_KEYS)){                  // pick a move by key
     const m=availMoves()[MOVE_KEYS[e.code]];
     if(m){ e.preventDefault();
-      if(duel){ if(bossPhase==='battle' && dodgeWin<=0) castMove(m); }
+      if(duel){ if(bossPhase==='battle') castMove(m); }
       else if(canCast(m)){ equipped=m.key; Audio8.sfx('select'); }
     }
     return;
@@ -1571,23 +1573,6 @@ function drawDuelIntro(){
     g.fillText('(tap to skip)', W/2, H-26);
   }
   g.restore(); g.textAlign='left';
-  if(!introReady) drawDuelSubtitle();      // the current scripted line, as a dialogue box
-}
-// a dialogue box for the intro line: speaker name + text, tinted by who's talking
-function drawDuelSubtitle(){
-  if(!duelSub) return;
-  const pika = duelSub.who==='pika', who = pika ? 'Pikachu' : (boss.cfg.name||'Foe');
-  const col = pika ? '#ffe14a' : '#9fd8ff', txt=duelSub.txt, y=H-96;
-  g.save();
-  g.font='600 20px Fredoka, sans-serif';
-  const w=Math.min(W-72, g.measureText(txt).width+64), x=W/2;
-  g.fillStyle='rgba(16,12,30,.88)'; rr(x-w/2, y-28, w, 70, 14); g.fill();
-  g.strokeStyle=col; g.lineWidth=2.5; rr(x-w/2, y-28, w, 70, 14); g.stroke();
-  g.fillStyle=col; g.font='700 13px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='alphabetic';
-  g.fillText(who.toUpperCase(), x-w/2+18, y-8);
-  g.fillStyle='#fff'; g.font='600 20px Fredoka, sans-serif'; g.textAlign='center';
-  g.fillText(txt, x, y+24);
-  g.restore(); g.textAlign='left';
 }
 function drawDodgePrompt(){
   const a=0.55+0.45*Math.sin(performance.now()/90);
@@ -1648,8 +1633,8 @@ function drawDuel(){
   else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, player.y)){}    // tumbling roll-dodge
   else drawCreature(PLAYER_X+pikaDX, player.y, player.mood, true);   // crouched stance (offset while rolling)
   drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
-  // controls: dodge arrows during a wind-up, move buttons otherwise
-  if(bossPhase==='battle'){ if(dodgeWin>0) drawDodgeButtons(); else drawMoveBar(); }
+  // controls (always on during battle): dodge arrows bottom-left, move buttons bottom-right
+  if(bossPhase==='battle'){ drawDodgeButtons(); drawMoveBar(); }
   drawHUD();
   if(flash.a>0){ g.fillStyle=flash.col; g.globalAlpha=flash.a; g.fillRect(0,0,W,H); g.globalAlpha=1; }
   if(bossPhase==='intro') drawDuelIntro();
@@ -1669,17 +1654,20 @@ function drawRoll(x,y){
 }
 // big arrow dodge buttons (only during a wind-up); any one dodges
 function drawDodgeButtons(){
+  const armed = dodgeWin>0;                                       // a foe attack is incoming → dodge now
   const pulse=0.6+0.4*Math.sin(performance.now()/100);
   for(const r of dodgeBtnRects()){
     const k=r.rad/50;                                    // scale glyph/label with the button size
     g.save();
+    g.globalAlpha = armed?1:0.5;                                  // dimmed until a dodge is actually needed
     g.beginPath(); g.arc(r.cx,r.cy,r.rad,0,7); g.fillStyle='rgba(20,14,36,.92)'; g.fill();
-    g.lineWidth=4; g.strokeStyle='#9fd8ff'; g.shadowColor='#9fd8ff'; g.shadowBlur=14*pulse;
+    g.lineWidth=armed?4:3; g.strokeStyle=armed?'#9fd8ff':'#5f7da0';
+    if(armed){ g.shadowColor='#9fd8ff'; g.shadowBlur=14*pulse; }
     g.beginPath(); g.arc(r.cx,r.cy,r.rad,0,7); g.stroke(); g.shadowBlur=0;
-    g.fillStyle='#fff'; g.font='700 '+Math.round(52*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle='#fff'; g.font='700 '+Math.round(44*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText(r.glyph, r.cx, r.cy-4*k);
-    g.font='700 '+Math.round(14*k)+'px Fredoka, sans-serif'; g.fillStyle='#cfe6ff';
-    g.fillText(r.dir==='up'?'JUMP':'ROLL', r.cx, r.cy+r.rad-16*k);
+    g.font='700 '+Math.round(13*k)+'px Fredoka, sans-serif'; g.fillStyle=armed?'#cfe6ff':'#9fb2c8';
+    g.fillText(r.dir==='up'?'JUMP':'DODGE', r.cx, r.cy+r.rad-15*k);
     g.restore();
   }
 }

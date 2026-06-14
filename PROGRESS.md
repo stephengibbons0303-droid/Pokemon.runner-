@@ -46,7 +46,7 @@ _Last updated: 2026-06-14._
 ### No-maths duels (config-driven)
 A boss becomes an action duel by setting `cfg.duel` (`'lake'` for Gyarados,
 `'dojo'` for Lucario); without it the level keeps the classic scrolling-maths
-boss. Scene, low-HP mechanic, dodge style, intro lines (`cfg.lines`), attack
+boss. Scene, low-HP mechanic, dodge style, the intro roar (`cfg.roar`), attack
 strips (`cfg.atkSeqs`) and the power-up strip (`cfg.powerSeq`) are all per-boss.
 L3–L5 are still classic.
 
@@ -54,11 +54,11 @@ L3–L5 are still classic.
 - **Scene:** lake with a back basin + front surface so Gyarados sits **partly
   submerged**; he **rises out of the lake** on entry. Ash on the left bank,
   Pikachu beside him (crouched stance, not running).
-- **Scripted intro** (`buildIntro`/`tickIntro`, generic): foe greets → Pikachu →
-  foe warns → Pikachu fires up → Ash encouragement → **"Ready to battle?"**
-  prompt. Each beat shows the matching `cfg.lines` line in a **dialogue box**
-  (`drawDuelSubtitle`, tinted by speaker). Sounds are sequenced with gaps and
-  channelled (no overlap). Tap skips the cutscene to the prompt.
+- **Scripted intro** (`buildIntro`/`tickIntro`, generic): three Ash↔Pikachu
+  coaching exchanges (Ash encourages, Pikachu replies each time) → the foe roars
+  and Pikachu answers → **"Ready to battle?"** prompt. Voice + Ash poses only,
+  no on-screen dialogue box. Sounds are sequenced with gaps and channelled (no
+  overlap). Tap skips the cutscene to the prompt.
 - **Energy bars** (0–100): Pikachu yellow (left), Gyarados blue (right); red at
   ≤10%. Hearts/charge meter hidden in the duel.
 - **Combat:** basic move = instant / 10% dmg; special = ~0.55s wind-up / 15%.
@@ -73,9 +73,10 @@ L3–L5 are still classic.
   `dash` (Quick Attack, Iron Tail) = Pikachu lunges in (`pikaLunge`, duel only).
 - **Scroll freeze:** the `world` scroll stops during a duel (it's a stand-off),
   so the foreground grass doesn't slide; lake ripples shimmer on a clock instead.
-- **Controls:** circular move buttons (icons + cost/`FAST`/`POWER` + `Z X C V B`
-  key chips); 3 **big centred** dodge arrows during a wind-up (`◀ ▲ ▶`, any one
-  dodges) — distinct from the bottom-right move bar so they read on mobile.
+- **Controls (both always on during battle):** 3 dodge arrows hug the
+  **bottom-left** (`◀ ▲ ▶`, any one dodges; they light up while a foe attack
+  winds up and dim otherwise); move buttons hug the **bottom-right** (icons +
+  `FAST`/`POWER` + `Z X C V B` key chips). Keyboard ←/→/↑ also dodge.
 - **Animations:** Pikachu 4-frame move sequences (`pika_seq_*`); real 4-frame
   dodge roll (`pika_roll*`); Gyarados Dragon Dance / Waterfall / Ice Fang
   (`gyara_seq_*`). Ash poses (ready/point/punch) driven by battle beats.

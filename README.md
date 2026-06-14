@@ -43,21 +43,22 @@ random** lane.
 Levels 1 and 2 cap with a bespoke **action duel** instead of a maths boss
 (Levels 3–5 still use the classic scrolling-maths boss). A boss opts in via
 `cfg.duel` — `'lake'` (Gyarados) or `'dojo'` (Lucario) — and the scene, intro
-lines, dodge style and low-HP mechanic vary per boss. Flow:
+roar, dodge style and low-HP mechanic vary per boss. Flow:
 
-1. **Scripted intro** (`buildIntro`): the foe greets → Pikachu responds → the
-   foe warns → Pikachu fires up → Ash encouragement → **"Ready to battle?"**
-   prompt. Each line shows in a dialogue box. Tap mid-cutscene to skip to the
-   prompt; tap the prompt to start.
+1. **Scripted intro** (`buildIntro`): three Ash↔Pikachu coaching exchanges (Ash
+   encourages, Pikachu replies each time) → the foe roars and Pikachu answers →
+   **"Ready to battle?"** prompt. Voice + Ash poses, no dialogue box. Tap
+   mid-cutscene to skip to the prompt; tap the prompt to start.
 2. **Battle:** no questions. Energy bars for both (Pikachu yellow top-left,
    Gyarados blue top-right; red at ≤10%).
    - **Attack:** tap a circular move button (or **Z/X/C/V/B**). **Basic**
      (Quick Attack) fires instantly for 10%; **special** (Thunderbolt, Electro
      Ball, …) has a short wind-up for 15%. Pikachu's moves play 4-frame
      animations.
-   - **Dodge:** when the foe winds up, three arrows appear — **◀ roll back /
-     ▲ jump / ▶ roll forward** (any one dodges; keyboard **←/→/↑**). A missed
-     dodge costs energy.
+   - **Dodge:** three arrows sit permanently **bottom-left** — **◀ roll back /
+     ▲ jump / ▶ roll forward** (any one dodges; keyboard **←/→/↑**). They light
+     up when the foe winds up; a missed dodge costs energy. Move buttons sit
+     **bottom-right**, so both control rows are always on screen.
    - **Per-boss tricks:** **Gyarados** (lake) can **submerge-dodge** a hit, and
      at low HP **dives to replenish and re-emerge stronger** (Dragon Dance).
      **Lucario** (dojo) instead **sidesteps** to dodge, and at low HP uses
