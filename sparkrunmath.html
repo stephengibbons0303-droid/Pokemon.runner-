@@ -28,11 +28,20 @@
   @keyframes wig{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(78deg)}}
   @media (orientation:portrait){#rotate{display:flex;} #stage{filter:blur(2px);}}
   /* tiny credit / mute hint lives on canvas; no DOM HUD needed */
+  /* fullscreen toggle — a browser-testing aid; auto-hidden once installed as a PWA */
+  #fsbtn{position:fixed;left:max(8px,env(safe-area-inset-left));top:max(8px,env(safe-area-inset-top));z-index:60;
+    width:42px;height:42px;border:none;border-radius:10px;background:rgba(35,22,53,.55);color:var(--cream);
+    font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}
+  #fsbtn:active{background:rgba(35,22,53,.9);}
+  #fsbtn[hidden]{display:none;}
+  @media all and (display-mode:standalone){#fsbtn{display:none!important;}}
 </style>
 </head>
 <body>
   <div id="stage"><canvas id="game" width="960" height="540"></canvas></div>
   <div id="rotate"><div class="ph">📱</div><p>Turn your device sideways to play!</p></div>
+  <button id="fsbtn" type="button" aria-label="Toggle fullscreen" hidden>⛶</button>
 
 <script>
 "use strict";
@@ -61,6 +70,26 @@ function updateRenderScale(){ const r=cv.getBoundingClientRect(); if(r.width>0) 
 addEventListener('resize', updateRenderScale);
 addEventListener('orientationchange', ()=>setTimeout(updateRenderScale,200));
 updateRenderScale();
+
+// ---------- fullscreen toggle (browser-testing aid; a no-op / hidden once a PWA) ----------
+(function(){
+  const fsBtn=document.getElementById('fsbtn'); if(!fsBtn) return;
+  const el=document.documentElement;
+  const reqFs=el.requestFullscreen||el.webkitRequestFullscreen;
+  const exitFs=document.exitFullscreen||document.webkitExitFullscreen;
+  const isFs=()=>!!(document.fullscreenElement||document.webkitFullscreenElement);
+  const standalone=()=>matchMedia('(display-mode:standalone)').matches||navigator.standalone===true;
+  function sync(){
+    if(!reqFs || standalone()){ fsBtn.hidden=true; return; }   // unsupported or already an installed PWA
+    fsBtn.hidden=false; fsBtn.textContent=isFs()?'✕':'⛶';      // ✕ = exit, ⛶ = enter
+  }
+  fsBtn.addEventListener('click', ()=>{
+    try{ if(isFs()){ exitFs&&exitFs.call(document); } else { const p=reqFs&&reqFs.call(el); if(p&&p.catch) p.catch(()=>{}); } }catch(e){}
+  });
+  document.addEventListener('fullscreenchange', ()=>{ sync(); updateRenderScale(); });
+  document.addEventListener('webkitfullscreenchange', ()=>{ sync(); updateRenderScale(); });
+  sync();
+})();
 const MIN_TAP_CSS = 46;                  // smallest comfortable touch target (CSS px)
 const CTRL_PAD = 22;                     // gap from the canvas edges (canvas units)
 // Pick a button diameter for a row of n circles: at least the design size, grown

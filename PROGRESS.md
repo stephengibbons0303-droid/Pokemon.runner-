@@ -58,6 +58,12 @@ _Last updated: 2026-06-14._
   `levelup.mp3`.
 - `voice(file, vol, chan)` one-shot clips with channels `foe`/`pika`/`ash`.
 
+### Dev / testing aids
+- **Fullscreen toggle** — a small DOM `#fsbtn` in the top-left viewport corner
+  (Fullscreen API). Purely for testing in a mobile browser; auto-hidden when the
+  API is unsupported or when running as an installed PWA (`display-mode:
+  standalone`). Refreshes `RENDER_SCALE` on `fullscreenchange`.
+
 ## Open items / TODO
 - **Tablet test pass (on-device)** — the controls now scale: `rowDiameter`
   enforces a ~46 CSS-px physical-tap floor (via a live `RENDER_SCALE`) and
