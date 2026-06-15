@@ -379,12 +379,19 @@ bgm.loop = true; bgm.volume = 0.5;
 const cheer = new Audio('levelup.mp3'); cheer.volume = 0.85;   // end-of-level celebration
 const fast = new Audio('music2.mp3'); fast.loop = true; fast.volume = 0;   // speed-run track
 let speedOn=false, fadeT=null; const NORM_VOL=0.5, FAST_VOL=0.6;
+// volume has three stages: 2=full, 1=low, 0=mute. `muted` mirrors stage 0 so the
+// existing mute checks keep working; low just scales every output down.
+let level=2;
+function volMul(){ return [0,0.32,1][level]; }
+function applyVol(){ const m=volMul();
+  if(master) master.gain.value=0.16*m;
+  bgm.volume=(speedOn?0:NORM_VOL)*m; fast.volume=(speedOn?FAST_VOL:0)*m; cheer.volume=0.85*m; }
 function crossfade(toFast){
   if(fadeT) clearInterval(fadeT);
   const up = toFast?fast:bgm, dn = toFast?bgm:fast;
   if(!muted){ up.play().catch(()=>{}); }
   fadeT=setInterval(()=>{
-    up.volume=Math.min(toFast?FAST_VOL:NORM_VOL, up.volume+0.05);
+    up.volume=Math.min((toFast?FAST_VOL:NORM_VOL)*volMul(), up.volume+0.05);
     dn.volume=Math.max(0, dn.volume-0.05);
     if(dn.volume<=0.001){ dn.pause(); clearInterval(fadeT); fadeT=null; }
   },45);
@@ -396,7 +403,7 @@ function crossfade(toFast){
   function ensure(){
     if(ctx) return;
     const AC = window.AudioContext||window.webkitAudioContext; if(!AC) return;
-    ctx = new AC(); master = ctx.createGain(); master.gain.value=0.16; master.connect(ctx.destination);
+    ctx = new AC(); master = ctx.createGain(); master.gain.value=0.16*volMul(); master.connect(ctx.destination);
   }
   function blip(freq,t,dur,type,gain,glideTo){
     const o=ctx.createOscillator(), a=ctx.createGain();
@@ -423,13 +430,17 @@ function crossfade(toFast){
     step++;
   }
   return {
-    toggle(){ muted=!muted; if(muted){ bgm.pause(); fast.pause(); } else if(started){ (speedOn?fast:bgm).play().catch(()=>{}); } return muted; },
+    // tap cycles full(2) → low(1) → mute(0) → full…
+    cycleVol(){ level = level===0?2:level-1; muted=(level===0); applyVol();
+      if(muted){ bgm.pause(); fast.pause(); } else if(started){ (speedOn?fast:bgm).play().catch(()=>{}); }
+      return level; },
+    volLevel(){ return level; }, volMul(){ return volMul(); },
     isMuted(){return muted;},
     pauseAudio(p){ if(p){ bgm.pause(); fast.pause(); } else if(started && !muted){ (speedOn?fast:bgm).play().catch(()=>{}); } },
-    startMusic(){ ensure(); if(started) return; started=true; if(!muted) bgm.play().catch(()=>{}); },
+    startMusic(){ ensure(); if(started) return; started=true; applyVol(); if(!muted) bgm.play().catch(()=>{}); },
     setSpeed(on){ if(on===speedOn) return; speedOn=on; if(started) crossfade(on); },
     isSpeed(){ return speedOn; },
-    cheer(){ if(muted) return; try{ cheer.currentTime=0; cheer.play().catch(()=>{}); }catch(e){} },
+    cheer(){ if(muted) return; try{ cheer.volume=0.85*volMul(); cheer.currentTime=0; cheer.play().catch(()=>{}); }catch(e){} },
     sfx(kind){
       ensure(); if(!ctx||muted) return; if(ctx.state==='suspended')ctx.resume();
       const t=ctx.currentTime+0.01;
@@ -454,7 +465,7 @@ function voice(file, vol, chan){
   try{
     let a=VOICES[file];
     if(!a){ a=new Audio(file); VOICES[file]=a; }
-    a.volume = vol==null?0.9:vol; a.currentTime=0;
+    a.volume = (vol==null?0.9:vol)*Audio8.volMul(); a.currentTime=0;
     if(chan){ const prev=VCHAN[chan]; if(prev && prev!==a){ try{prev.pause();}catch(e){} } VCHAN[chan]=a; }
     if(!Audio8.isMuted()) a.play().catch(()=>{});
     return a;
@@ -1100,7 +1111,7 @@ function canvasPoint(e){
 function onPress(e){
   e.preventDefault();
   const p=canvasPoint(e);
-  if(pointInMute(p.x,p.y)){ Audio8.toggle(); Audio8.sfx('select'); return; }
+  if(pointInMute(p.x,p.y)){ Audio8.cycleVol(); Audio8.sfx('select'); return; }   // full → low → mute → full
   if(state==='menu'){                                                              // start screen: gallery + pick a player
     if(pointInRect(dexBtnRect(),p.x,p.y)){ openDex(); return; }
     const pr=playBtnRects();
@@ -1623,7 +1634,7 @@ function drawHUD(){
   // mute button
   g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12*k); g.fill();
   g.fillStyle=C.cream; g.font=Math.round(20*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-  g.fillText(Audio8.isMuted()?'🔇':'🔊', MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
+  g.fillText(['🔇','🔉','🔊'][Audio8.volLevel()], MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
 }
 
 /* pause overlay — dims the frozen frame and offers a big Resume button */
@@ -2305,7 +2316,7 @@ function drawMuteOnly(){
   const k=MUTE.w/40;
   g.save(); g.fillStyle='rgba(35,22,53,.7)'; rr(MUTE.x,MUTE.y,MUTE.w,MUTE.h,12*k); g.fill();
   g.fillStyle=C.cream; g.font=Math.round(20*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-  g.fillText(Audio8.isMuted()?'🔇':'🔊', MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
+  g.fillText(['🔇','🔉','🔊'][Audio8.volLevel()], MUTE.x+MUTE.w/2, MUTE.y+MUTE.h/2+1); g.restore();
 }
 
 /* ============================================================

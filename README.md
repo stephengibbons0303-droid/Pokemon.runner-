@@ -36,7 +36,8 @@ the rest of the assets (see `ACH_ANIM` and `say_*.mp3` / `tools/slice_speech.py`
 - **Speed run:** a streak of 5 correct triggers a faster "Speed Run" — same
   question difficulty, just ~⅓ less time to think (×1.5 gate speed).
 - **Pause:** the ❚❚ button (top-left of the mute button), or **P / Esc**.
-- **Mute:** 🔊 button (top-right).
+- **Volume:** the 🔊 button (top-right) cycles **full → low (🔉) → mute (🔇) →
+  full**.
 
 ## Game progression
 
