@@ -173,10 +173,11 @@ const BOSS_SEQ = {
   'sciz_swordsdance.png':{ file:'sciz_seq_sd.png', cw:408, ch:348 },
   'sciz_bulletpunch.png':{ file:'sciz_seq_bp.png', cw:572, ch:348 },
   'sciz_airslash.png':   { file:'sciz_seq_as.png', cw:312, ch:348 },
-  // Galarian Moltres move strips (white-bg sheets via tools/extract_moltres.py; shared cell ch=445)
-  'moltres_fierywrath.png': { file:'moltres_seq_fw.png', cw:738, ch:445 },
-  'moltres_darkpulse.png':  { file:'moltres_seq_dp.png', cw:742, ch:445 },
-  'moltres_hurricane.png':  { file:'moltres_seq_hr.png', cw:384, ch:445 },
+  // Galarian Moltres move strips (white-bg sheets via tools/extract_moltres.py; shared cell ch=413)
+  'moltres_fierywrath.png': { file:'moltres_seq_fw.png', cw:684, ch:413 },
+  'moltres_airslash.png':   { file:'moltres_seq_as.png', cw:338, ch:413 },
+  'moltres_darkpulse.png':  { file:'moltres_seq_dp.png', cw:689, ch:413 },
+  'moltres_hurricane.png':  { file:'moltres_seq_hr.png', cw:358, ch:413 },
 };
 for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
