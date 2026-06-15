@@ -713,6 +713,7 @@ let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-scr
 let bossHold=0;                                      // pre-battle announcer hold before the first question
 let bossIntroQueue=[];                               // classic boss: announcer clips to play (in order) before the questions
 let shots=[], pikaLunge=null;                         // flying energy orbs + Pikachu's melee lunge
+let foeShots=[];                                      // the boss's attack travelling to Pikachu (water/aura shoot)
 let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
 let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
 // no-math lair duel (Gyarados): a static confrontation — chat, then tap moves vs. dodge attacks
@@ -752,7 +753,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introState='idle'; introI=0; introBeats=[]; introCur=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introState='idle'; introI=0; introBeats=[]; introCur=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; foeShots=[]; pikaLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -798,7 +799,7 @@ function enterBoss(){
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, sideX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
          evade:null, evadeDir:1, atkKind:'basic', atkDmg:BASIC_DMG, atkSeq:null, atkN:0 };   // + special-move animation
-  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; pikaLunge=null; pikaDX=0;
+  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; pikaDX=0;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
@@ -898,7 +899,7 @@ function applyPikaHit(m){
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); }
   bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
-  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
+  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; foeShots=[]; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
 }
 function foeAttack(){
   const special=Math.random()<0.4;                    // basic = quick/weaker, special = slower/stronger
@@ -909,7 +910,20 @@ function foeAttack(){
   dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.8:2.8)/boss.power;
   bossMsg=special?(boss.cfg.name+' charges a big attack!'):''; bossMsgT=special?1.0:0;
   const atks=boss.cfg.atkSeqs||[];                     // animate the move from the boss's own strips
-  if(special && atks.length){ const sq=BOSS_SEQ[atks[boss.atkN++ % atks.length]]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }
+  let mv=null;
+  if(special && atks.length){ const file=atks[boss.atkN++ % atks.length]; const sq=BOSS_SEQ[file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup};
+    mv=(boss.cfg.moves||[]).find(m=>m.file===file); }
+  bossFire(special, mv);                                // a projectile flies from the boss to Pikachu, arriving as the window closes
+}
+// the boss's attack travels to Pikachu: a water blast (lake) or aura blast (dojo),
+// styled by the special move's colour, arriving when the dodge window closes
+function bossFire(special, mv){
+  const dojo = boss.cfg.duel==='dojo';
+  const drop = dojo ? DOJO_DROP : (DUEL_DROP + (boss.subY||0));
+  const x0 = BOSS_X + (boss.sideX||0) - 96, y0 = BOSS_Y + drop - 6;       // the boss's mouth/front
+  const x1 = PLAYER_X + (pikaDX||0) + 16,  y1 = player.y + DUEL_PIKA_DROP - 14;   // Pikachu
+  const col = (mv && mv.col) || (dojo ? '#a8e0ff' : '#5fb0e6');
+  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: special?22:14, kind: dojo?'aura':'water' });
 }
 // any of the 3 buttons dodges; direction just changes the motion (placeholder until a roll sheet lands)
 function doDodge(dir){
@@ -956,6 +970,8 @@ function updateDuel(dt){
   // resolve a special move once its wind-up finishes
   if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const m=pikaCast.m; pikaCast=null; applyPikaHit(m); Audio8.sfx('good'); castCD=0.5; } }
   if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
+  // the boss's attack travelling to Pikachu → splashes on arrival
+  foeShots=foeShots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; } return true; });
   if(bossPhase!=='battle' || boss.defeated) return;
 
   // --- quick dodge (evading a Pikachu hit): sidestep in the dojo, submerge at the lake ---
@@ -1984,7 +2000,7 @@ function drawDuel(){
     drawLakeFront();        // water in front of his lower body → partly submerged
   }
   if(dodgeWin>0) drawDodgeWave();
-  drawZaps(); drawShots();   // bolts + flying orbs
+  drawZaps(); drawShots(); drawFoeShots();   // Pikachu's bolts/orbs + the boss's incoming blast
   drawAsh();                // trainer on the bank
   const py = player.y + DUEL_PIKA_DROP;   // duel: planted on the floor line
   if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=28+p*30;   // charging glow on a special
@@ -2189,6 +2205,31 @@ function drawShots(){
     g.globalAlpha=0.8; g.strokeStyle=s.col; g.lineWidth=2; g.beginPath(); g.arc(x,y,r*0.7,0,7); g.stroke();
     g.restore();
   });
+}
+// the boss's attack flying to Pikachu — a chunky water/aura blast with a streaking tail
+function drawFoeShots(){
+  const now=performance.now();
+  foeShots.forEach(s=>{
+    const p=Math.min(1,s.t/s.dur);
+    const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*38;   // arcs over toward Pikachu
+    const r=s.r*(0.9+0.12*Math.sin(now/30));
+    g.save();
+    // streaking tail (longer than Pikachu's, so it reads as an incoming attack)
+    g.globalAlpha=0.5; g.strokeStyle=s.col; g.lineWidth=8; g.lineCap='round';
+    g.beginPath(); g.moveTo(s.x0+(x-s.x0)*0.4, s.y0+(y-s.y0)*0.4 - Math.sin(p*Math.PI)*22); g.lineTo(x,y); g.stroke();
+    // glowing core
+    g.globalAlpha=1; const gx=g.createRadialGradient(x,y,2,x,y,r);
+    gx.addColorStop(0,'#ffffff'); gx.addColorStop(0.5,s.col); gx.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=gx; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+    g.globalAlpha=0.85; g.strokeStyle='rgba(255,255,255,.85)'; g.lineWidth=2; g.beginPath(); g.arc(x,y,r*0.62,0,7); g.stroke();
+    g.restore();
+  });
+}
+// splash where the boss's attack lands (droplets + a ring)
+function duelSplash(x,y,col){
+  rings.push({x,y,r:10,maxR:72,life:0.45,col,lw:5});
+  for(let i=0;i<12;i++){ const a=Math.random()*Math.PI*2, sp=80+Math.random()*180;
+    stars.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-50,life:0.4+Math.random()*0.3,r:3+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*12,c:col}); }
 }
 function drawZaps(){
   zaps.forEach(z=>{

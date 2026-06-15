@@ -88,6 +88,14 @@ _Last updated: 2026-06-14._
   multiplication, replacing the old +/− mix; exact-duplicate facts in the
   supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
 
+## Recent fixes
+- **Boss attack now reaches Pikachu** — duel bosses fire a travelling blast
+  (`bossFire`/`foeShots`, water at the lake / aura in the dojo, tinted by the
+  special's colour) from their mouth to Pikachu, arriving as the dodge window
+  closes, with a splash on impact (`drawFoeShots`/`duelSplash`). Previously the
+  special only animated on the boss with nothing crossing to Pikachu.
+- **Power-button icons preloaded** so they're never blank (incl. dev-jump entry).
+
 ## Open items / TODO
 - **Tablet test pass (on-device)** — controls scale to a ~46 CSS-px physical-tap
   floor (`rowDiameter` + live `RENDER_SCALE`); dodge arrows now sit bottom-left,
