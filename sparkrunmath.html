@@ -174,6 +174,7 @@ const BOSSES = [
     roar:'gyara_roar.mp3', cry:'gyara_cry.mp3', roar2:'gyara_roar2.mp3',
     atkSeqs:['gyara_waterfall.png','gyara_icefang.png'],   // specials cycled as attacks
     powerSeq:'gyara_dragondance.png',                      // plays on the dive-recover power-up
+    heavy:'gyara_waterfall.png', heavyName:'Waterfall',    // signature 30% move (charged, telegraphed)
     lines:[
       { who:'gyara', txt:'GRAAAH! Who disturbs my lake?' },
       { who:'pika',  txt:'Pika-pi! (We just want to pass!)' },
@@ -194,6 +195,7 @@ const BOSSES = [
     // his special-move strips, cycled as attacks; powerSeq plays on the Swords-Dance enrage
     atkSeqs:['luca_aurasphere.png','luca_flashcannon.png','luca_dragonpulse.png','luca_vacuumwave.png'],
     powerSeq:'luca_flashcannon.png',
+    heavy:'luca_aurasphere.png', heavyName:'Aura Sphere',  // signature 30% move (charged, telegraphed)
     lines:[
       { who:'foe',  txt:'You carry a strong aura, Pikachu. Show me its limit.' },
       { who:'pika', txt:'Pika-pi! (We accept your challenge!)' },
@@ -725,7 +727,7 @@ let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
-const BASIC_DMG=10, SPECIAL_DMG=15;    // % damage per hit (basic = quick/less, special = slower/more)
+const BASIC_DMG=10, SPECIAL_DMG=15, SUPER_DMG=30;    // % energy per hit; super = a charged signature move (Pikachu: Thunderbolt; bosses: their heavy)
 const duelDmg=m=> (m && m.kind==='basic') ? BASIC_DMG : SPECIAL_DMG;
 
 function setSpeedMode(on){
@@ -798,7 +800,7 @@ function enterBoss(){
   const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, sideX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
-         evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0 };   // + special-move animation
+         evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0, charging:null };   // + special-move / charge state
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; pikaDX=0;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
@@ -874,63 +876,79 @@ function duelBegin(){
   bossPhase='battle'; foeTimer=2.6; bossMsg='Battle!'; bossMsgT=1.0;
   voice(PIKA_CRY,0.9,'pika'); ashShow('point',1.4);
 }
-function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade; }   // hittable only when surfaced
+function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade && !boss.charging; }   // hittable only when surfaced & not charging its heavy
 // tap a move: basic fires instantly, special winds up a moment first
 function castMove(m){
   if(castCD>0 || pikaCast || boss.defeated) return;
   equipped=m.key; player.mood='happy'; player.moodT=0.5;
-  if(m.kind==='special' || m.kind===undefined){      // special = slower build-up, more damage
+  if(m.key==='tb'){                                   // Thunderbolt = charged SUPER: longer wind-up,
+    pikaCast={m, t:0, windup:1.6, super:true};        // Pikachu glows & shakes and can't be hurt, hits for 30%
+    voice(PIKA_VOICE,0.8,'pika'); bossMsg='Pikachu charges Thunderbolt! ⚡'; bossMsgT=1.6;
+  } else if(m.kind==='special' || m.kind===undefined){  // special = slower build-up, more damage
     pikaCast={m, t:0, windup:0.55}; voice(PIKA_VOICE,0.7,'pika'); bossMsg=m.name+'…'; bossMsgT=0.6;
   } else {                                            // basic = quick, less damage
     applyPikaHit(m); Audio8.sfx('good'); castCD=0.42;
   }
 }
-// resolve a Pikachu hit (after the wind-up for specials) — Gyarados may submerge to dodge
-function applyPikaHit(m){
-  if(!canTarget()){ pikaFire(m); return; }            // he's already under → whiff
-  if(Math.random()<0.28){                             // dodge: step aside (dojo) or submerge (lake)
+// resolve a Pikachu hit (after the wind-up for specials) — Gyarados may submerge to dodge.
+// `dmg` overrides the move's damage (Thunderbolt super = 30); the super never gets evaded.
+function applyPikaHit(m, dmg){
+  const sup = dmg!=null;
+  if(!canTarget()){ pikaFire(m); return; }            // he's already under/charging → whiff
+  if(!sup && Math.random()<0.28){                     // dodge: step aside (dojo) or submerge (lake)
     const dojo=boss.cfg.duel==='dojo';
     boss.evade={t:0,dur:dojo?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
     if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
     bossMsg=boss.cfg.name+(dojo?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
   }
-  boss.hp=Math.max(0, boss.hp-duelDmg(m)); boss.hurt=0.6;
-  pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:0.32,col:m.col};
+  boss.hp=Math.max(0, boss.hp-(dmg!=null?dmg:duelDmg(m))); boss.hurt=0.6;
+  pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:sup?0.5:0.32,col:m.col};
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); }
-  bossMsg='Pikachu used '+m.name+'!'; bossMsgT=1.0;
+  bossMsg=(sup?'Pikachu unleashes ':'Pikachu used ')+m.name+'!'; bossMsgT=1.0;
   if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; foeShots=[]; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
 }
-function foeAttack(){
-  const special=Math.random()<0.4;                    // basic = quick/weaker, special = slower/stronger
-  boss.atkKind=special?'special':'basic'; boss.atkDmg=special?SPECIAL_DMG:BASIC_DMG;
-  boss.atkArc = Math.random()<0.45 ? 'high' : 'low';  // high = lobbed → roll aside (◀/▶); low = straight → jump (▲)
-  boss.atk=0.6; flash={a:0.4,col:special?'#7aa6ff':'#9fd8ff'};
-  if(boss.cfg.roar2) voice(boss.cfg.roar2,0.7,'foe');
-  const windup=(special?1.8:1.2)/boss.power;           // a touch longer → fairer reaction time on mobile
-  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power;   // attacks a bit more often so it's a real threat
-  bossMsg=special?(boss.cfg.name+' charges a big attack!'):''; bossMsgT=special?1.0:0;
-  const atks=boss.cfg.atkSeqs||[];                     // animate the move from the boss's own strips
+function foeAttack(heavy){
+  const special = heavy || Math.random()<0.4;         // basic = quick/weaker, special = slower/stronger
+  boss.atkKind = heavy?'heavy':(special?'special':'basic');
+  boss.atkDmg  = heavy?SUPER_DMG:(special?SPECIAL_DMG:BASIC_DMG);
+  boss.atkArc  = Math.random()<0.45 ? 'high' : 'low'; // high = lobbed → roll aside (◀/▶); low = straight → jump (▲)
+  boss.atk=0.6; flash={a:heavy?0.55:0.4, col: heavy?'#fff2a0':(special?'#7aa6ff':'#9fd8ff')};
+  if(boss.cfg.roar2) voice(boss.cfg.roar2, heavy?0.95:0.7, 'foe');
+  const windup=(heavy?1.9:special?1.8:1.2)/boss.power; // heavy gives a touch more reaction time
+  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power;
+  bossMsg = heavy ? ('Here comes '+(boss.cfg.heavyName||'its heavy move')+' — DODGE!')
+                  : special ? (boss.cfg.name+' charges a big attack!') : '';
+  bossMsgT = heavy?1.6 : special?1.0 : 0;
+  // pick the move strip: heavy uses the signature move; specials cycle the boss's atkSeqs
+  let file = heavy ? boss.cfg.heavy : (special && (boss.cfg.atkSeqs||[]).length ? boss.cfg.atkSeqs[boss.atkN++ % boss.cfg.atkSeqs.length] : null);
   let mv=null;
-  if(special && atks.length){ const file=atks[boss.atkN++ % atks.length]; const sq=BOSS_SEQ[file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup};
-    mv=(boss.cfg.moves||[]).find(m=>m.file===file); }
-  bossFire(special, mv);                                // a projectile flies from the boss to Pikachu, arriving as the window closes
+  if(file){ const sq=BOSS_SEQ[file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; mv=(boss.cfg.moves||[]).find(m=>m.file===file); }
+  bossFire(special, mv, heavy);                         // a projectile flies from the boss to Pikachu, arriving as the window closes
 }
 // the boss's attack travels to Pikachu: a water blast (lake) or aura blast (dojo),
-// styled by the special move's colour, arriving when the dodge window closes
-function bossFire(special, mv){
+// styled by the move's colour, arriving when the dodge window closes
+function bossFire(special, mv, heavy){
   const dojo = boss.cfg.duel==='dojo';
   const drop = dojo ? DOJO_DROP : (DUEL_DROP + (boss.subY||0));
   const x0 = BOSS_X + (boss.sideX||0) - 96, y0 = BOSS_Y + drop - 6;       // the boss's mouth/front
   const x1 = PLAYER_X + (pikaDX||0) + 16,  y1 = player.y + DUEL_PIKA_DROP - 14;   // Pikachu
   const col = (mv && mv.col) || (dojo ? '#a8e0ff' : '#5fb0e6');
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
-  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: special?22:14, kind: dojo?'aura':'water', arc });
+  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind: dojo?'aura':'water', arc, heavy:!!heavy });
+}
+// start charging the signature heavy move: ~2s glow + shake telegraph, invulnerable while charging
+function startHeavy(){
+  boss.charging={t:0,dur:2.0};
+  flash={a:0.45,col:'#fff2a0'};
+  if(boss.cfg.roar2) voice(boss.cfg.roar2,0.95,'foe');
+  bossMsg=boss.cfg.name+' powers up — '+(boss.cfg.heavyName||'heavy move')+'!'; bossMsgT=2.0;
 }
 // directional dodge: a LOW attack must be JUMPED (▲); a HIGH lobbed attack must be
 // ROLLED aside (◀/▶). The wrong move (or none) lets the hit land.
 function doDodge(dir){
   if(dodgeWin<=0) return;
+  if(pikaCast && !pikaCast.super) return;             // committed to a normal special → can't dodge (it'll connect)
   const needRoll = boss.atkArc==='high';
   const correct = needRoll ? (dir==='back'||dir==='fwd') : (dir==='up');
   dodgeWin=0; player.air=true; player.reachedApex=false; player.jumpT=0;
@@ -941,6 +959,7 @@ function doDodge(dir){
 }
 // the boss's attack connects with Pikachu (shield soaks it, else energy + comeback check)
 function foeHit(){
+  if(pikaCast && pikaCast.super){ bossMsg='Pikachu is charging — unhurt! ⚡'; bossMsgT=0.8; return; }   // invulnerable mid-Thunderbolt
   if(pikaShield>0){ pikaShield--; bossMsg='Blocked! 🛡️'; bossMsgT=1.0; Audio8.sfx('select'); return; }
   pikaHP=Math.max(0, pikaHP-boss.atkDmg); oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad');
   flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9;
@@ -980,7 +999,7 @@ function updateDuel(dt){
   // let a dodge-hop fall back down once it has peaked
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
   // resolve a special move once its wind-up finishes
-  if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const m=pikaCast.m; pikaCast=null; applyPikaHit(m); Audio8.sfx('good'); castCD=0.5; } }
+  if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const c=pikaCast; pikaCast=null; applyPikaHit(c.m, c.super?SUPER_DMG:null); Audio8.sfx(c.super?'win':'good'); castCD=c.super?0.7:0.5; } }
   if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
   // the boss's attack travelling to Pikachu → splashes on arrival
   foeShots=foeShots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; } return true; });
@@ -1029,11 +1048,23 @@ function updateDuel(dt){
     }
   }
 
+  // --- charging the signature heavy move (glow + shake telegraph; invulnerable) ---
+  if(boss.charging){
+    boss.charging.t+=dt;
+    if(boss.charging.t>=boss.charging.dur){ boss.charging=null; foeAttack(true); }   // unleash the 30% heavy
+    return;
+  }
   // --- normal attack cadence + dodge window ---
   if(dodgeWin>0){
     dodgeWin-=dt;
     if(dodgeWin<=0){ foeHit(); if(state==='over') return; }   // window closed without a dodge → it connects
-  } else { foeTimer-=dt; if(foeTimer<=0) foeAttack(); }
+  } else {
+    foeTimer-=dt;
+    if(foeTimer<=0){
+      if(boss.cfg.heavy && Math.random()<0.25) startHeavy();   // occasionally wind up the signature heavy
+      else foeAttack();
+    }
+  }
 }
 // boss strikes back: play the next signature-move cut-in (Gyarados has 4)
 function bossAttack(){
@@ -2008,14 +2039,16 @@ function drawDuel(){
   drawZaps(); drawShots(); drawFoeShots();   // Pikachu's bolts/orbs + the boss's incoming blast
   drawAsh();                // trainer on the bank
   const py = player.y + DUEL_PIKA_DROP;   // duel: planted on the floor line
-  if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=28+p*30;   // charging glow on a special
-    g.save(); g.globalAlpha=0.5*p; const gx=g.createRadialGradient(PLAYER_X+pikaDX,py-6,4,PLAYER_X+pikaDX,py-6,gr);
-    gx.addColorStop(0,'#fff7b0'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
-    g.beginPath(); g.arc(PLAYER_X+pikaDX,py-6,gr,0,7); g.fill(); g.restore(); }
+  const sup = pikaCast && pikaCast.super;          // Thunderbolt super: bigger glow + shake, invulnerable
+  const shx = sup ? Math.sin(performance.now()/26)*5 : 0;
+  if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=(sup?40:28)+p*(sup?46:30);   // charging glow on a special
+    g.save(); g.globalAlpha=(sup?0.66:0.5)*Math.min(1,0.3+p); const gx=g.createRadialGradient(PLAYER_X+pikaDX+shx,py-6,4,PLAYER_X+pikaDX+shx,py-6,gr);
+    gx.addColorStop(0, sup?'#fffbe0':'#fff7b0'); gx.addColorStop(0.5, sup?'rgba(255,225,74,.7)':'rgba(255,225,74,.5)'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
+    g.beginPath(); g.arc(PLAYER_X+pikaDX+shx,py-6,gr,0,7); g.fill(); g.restore(); }
   if(pikaShield>0) drawShield(PLAYER_X+pikaDX, py);
   if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, py)){}    // tumbling roll-dodge
-  else drawCreature(PLAYER_X+pikaDX, py, player.mood, true, true);   // crouched, planted (no sway)
+  else drawCreature(PLAYER_X+pikaDX+shx, py, player.mood, true, true);   // crouched, planted (no sway)
   drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
   // controls (always on during battle): dodge arrows bottom-left, move buttons bottom-right
   if(bossPhase==='battle'){ drawDodgeButtons(); drawMoveBar(); }
@@ -2137,9 +2170,16 @@ const DOJO_DROP=100;            // stand the foe on the dojo floor (dojo duel on
 function drawBossSprite(){
   const dojo = bossMode==='duel' && boss.cfg.duel==='dojo';
   const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises/stands instead of sliding
-  const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : 0;
+  const chg = !!boss.charging;
+  const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : (chg ? Math.sin(performance.now()/26)*6 : 0);   // shudders while charging its heavy
   const drop = (bossMode==='duel') ? (dojo ? DOJO_DROP : DUEL_DROP + (boss.subY||0)) : 0;   // lake: lowered + submersion; dojo: stands
   const cx=BOSS_X+slide+shake+(boss.sideX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*10;   // dojo sidestep shifts x
+  if(chg){                                            // charging glow: pulsing golden aura
+    const pr=0.6+0.4*Math.sin(performance.now()/90), R=BOSS_H*0.62;
+    g.save(); const gl=g.createRadialGradient(cx,cy,8,cx,cy,R);
+    gl.addColorStop(0,'rgba(255,242,160,'+(0.5*pr)+')'); gl.addColorStop(1,'rgba(255,242,160,0)');
+    g.fillStyle=gl; g.beginPath(); g.arc(cx,cy,R,0,7); g.fill(); g.restore();
+  }
   let alpha=1, rot=0, sink=0;
   if(boss.defeated){ const p=Math.min(1,boss.deadT/1.8); alpha=1-p*0.9; rot=p*0.7; sink=p*150; }
   // swap to the aggressive reaction pose while flinching or attacking

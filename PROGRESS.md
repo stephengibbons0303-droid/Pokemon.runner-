@@ -89,6 +89,13 @@ _Last updated: 2026-06-14._
   supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
 
 ## Recent fixes
+- **Super moves (30%) for both sides.** Pikachu's **Thunderbolt** is now a charged
+  super: ~1.6s wind-up with a glowing/shaking Pikachu, **invulnerable while
+  charging**, hits for 30% and isn't evaded. Each boss has a **signature heavy**
+  (Gyarados **Waterfall**, Lucario **Aura Sphere**): a ~2s glow+shake charge during
+  which the boss **can't be damaged**, then a telegraphed 30% attack to dodge
+  (`startHeavy`/`boss.charging`, `SUPER_DMG`). While Pikachu casts a *normal*
+  special he can't dodge, so the boss's hit lands — only Thunderbolt grants i-frames.
 - **Directional duel dodging** — boss attacks are now **low** (straight → JUMP ▲)
   or **high** (lobbed arc → ROLL ◀/▶); the wrong button (or none) lets the hit
   land, so hits actually connect. The correct dodge button(s) light up and the
