@@ -1,158 +1,92 @@
 # Progress / status
 
-Working notes for **Spark Run — Maths Adventure**. All game code lives in
-`sparkrunmath.html` (single inline `<script>`). Branch:
+Working notes for **Spark Run** (a two-game maths/literacy adventure). All game
+code lives in `sparkrunmath.html` (single inline `<script>`). Branch:
 `claude/pokemon-math-game-v1-txqzrt`.
 
 Full implemented-feature detail lives in
 [`PROGRESS_ARCHIVE.md`](PROGRESS_ARCHIVE.md). This file is the *living* doc:
 current status, recent work, open items.
 
-_Last updated: 2026-06-14._
+_Last updated: 2026-06-15._
 
 ## Current status (snapshot)
-- **Maths runner, 5 levels**, 25 questions each, timed-jump skill mechanic,
-  forgiving 2-D overlap scoring, speed-run streak bonus, hearts/pause. *(detail
-  → archive)*
-- **L1–L3 questions** are curated 3-stage pools (`L1_POOLS`/`L2_POOLS`/`L3_POOLS`
-  = add / subtract / multiply), random with no repeats per stage. L4–L5 still use
-  procedural generators (and L4 also × — likely redefined when its sets arrive).
-- **No-maths boss duels** (config-driven via `cfg.duel`): **L1 Gyarados** (lake)
-  and **L2 Lucario** (dojo) are full action duels — scripted intro, energy bars,
-  move-vs-dodge, per-boss low-HP mechanic, projectiles that travel to the boss.
-- **L3–L5 bosses** are still the classic scrolling-maths boss (no duels yet).
-- **Achievement gallery ("Spark Friends"):** every Pokémon you defeat joins a
-  gallery, **saved across sessions** (`localStorage`, `caught` set). Opened from a
-  start-screen button (🏆 counter) and shown automatically with the fresh catch
-  highlighted right after a win. Each slot animates via `ACH_ANIM[name]`
-  (drop-in frame strip) or falls back to the static boss sprite + idle bob.
-- **Tooling:** `tools/selftest.js` headless guard + `.githooks/pre-push`;
-  `#devjump` start-screen dev menu (`DEV` flag) to jump to any level/boss.
+- **Two games on one engine**, picked on the start screen (`PACKS`/`selectPack`):
+  - **Maths** (older) — written sums, 5 levels × 25 questions, timed-jump skill,
+    2-D overlap scoring, speed-run, hearts/pause.
+  - **ABC & 123** (younger) — audio recognition: Ash *speaks* a letter/number, the
+    child jumps to the matching balloon. 5 levels (1–10 / A–M / N–Z / 11–20 / A–Z),
+    talking/celebrating Ash portrait, **Easy** (hold-lane) / **Tricky** (timed)
+    toggle. Same Pokémon bosses.
+- **Scoring requires the *chosen* lane** (`player.lane === correctLane` + height
+  overlap) — passing through a lane no longer scores. **Answer feedback:** correct
+  card greens + gold sparkles; wrong card pops like a balloon.
+- **L1 Gyarados (lake) & L2 Lucario (dojo)** are full **action duels**: directional
+  dodge (low → JUMP ▲ / high → ROLL ◀▶), projectiles that travel to Pikachu, **super
+  moves** (Pikachu Thunderbolt 30% / per-boss heavy 30%, both charged + i-frames),
+  **heart-based retries**, Ash voice calls ("be careful" / "you did it").
+- **L3–L5 are still the classic scrolling-maths boss** — *not yet* upgraded to the
+  duel mechanics (top TODO).
+- **Spark Friends gallery** (per-pack, saved); **pre-battle announcer** voice
+  ("…has done his X… it's <Boss>!"); **3-stage volume** (full/low/mute).
+- **Tooling:** `tools/selftest.js` headless guard (now incl. ABC pack + the
+  pass-through exploit); `slice_speech.py`/`cutout_bg.py` asset tools;
+  `#devjump` dev menu (`DEV` flag).
 
-## Recent work (this session)
-- **Two games via content packs** — same runner/boss engine, selectable on the
-  start screen. `PACKS.maths` (the original written sums, unchanged) and
-  `PACKS.abc` (younger, audio recognition). `LEVELS` now points at the active
-  pack; `selectPack()` swaps content + the per-child gallery save
-  (`sparkrun.caught.v1.<pack>`).
-- **Younger "ABC & 123" game** — Ash *speaks* a letter/number and the child jumps
-  to the matching balloon. In the prompt box (top centre, where the sum sits) Ash's
-  portrait (transparent cut-out, floats over the scene) **opens his mouth once for
-  the spoken clip** (`ash_say0` closed → `ash_say1` open → closed) and swaps to a
-  **celebration frame on a correct answer** (`ash_yay.png`); tap the box to replay. Levels: 1–10 / A–M / N–Z / 11–20 / A–Z, 8 questions each, same
-  Pokémon bosses. `recogLevel`/`pickChoices` build the content; gens return their
-  own `choices` + an `audio` key; `sayGlyph()` plays `say_<x>.mp3` (falls back to
-  device speech-synth if a clip is missing) and drives the lip-flap via
-  `promptTalking()`.
-- **Pre-battle** (simplified) — announcer "…has done his maths/numbers/letters…"
-  → "it's <Boss>!" → Pikachu's battle cry → the opponent's (duel bosses only) →
-  battle. The old Ash↔Pikachu coaching exchanges were dropped from the intro. Pack/content picks the
-  first line (`ash_pre_maths/numbers/letters.mp3` by level `kind`); the second is
-  per boss (`BOSS_VS_CLIP` → `ash_its_*.mp3`). Duels prepend both as intro beats;
-  classic bosses drain a `bossIntroQueue` (clip-by-clip, `bossHold` per-clip
-  `PRE_DUR`) before the first question. All announcer clips are preloaded.
-- **ABC jump difficulty** (start-screen toggle, saved `abcEasy`, default Easy) —
-  **Easy** hops to the tapped lane and *holds* it (taps cycle ground→mid→high,
-  no timed arc) so the child just aligns and waits; **Tricky** is the timed-jump
-  arc. Easy reuses the existing non-jumping ease path; scoring is unchanged.
-- **Three-stage volume** — the audio button cycles full → low → mute → full
-  (`Audio8.cycleVol`/`volMul`), scaling every output.
-- **Voice clips** — Ash's recorded A–Z and 1–20 sliced into 46 `say_*.mp3`
-  via `tools/slice_speech.py` (silence-split, refuses on a count mismatch).
-- selftest extended with a section [4] covering the audio pack.
-- **Flipped Lucario** to face Pikachu in the dojo duel (per-boss `flip` flag,
-  mirrors idle / hurt / move cut-ins in `drawBossSprite`).
-- **Achievement gallery ("Spark Friends")** — new `dex` screen + state. Defeating
-  a boss adds it to a persisted `caught` set (`bossDefeated`→`catchMon`), then
-  routes through the gallery (`dexReturn` → `levelup`/`won`). Start-screen 🏆
-  button (`dexBtnRect`/`openDex`) browses it any time. Slots drawn by
-  `drawDex`/`drawMonInSlot`; locked Pokémon show a `?` silhouette. **To add a
-  unique animation:** drop a horizontal frame strip and add an `ACH_ANIM[name]`
-  entry (same `cw`/`ch`/`n` convention as the move strips) — no other code change.
-- Extracted **Lucario** move strips (`tools/extract_lucario.py`, sources under
-  `tools/lucario_sheets/`) → `luca_seq_*`.
-- Added **Lucario voice clips** (`luca_growl/aura/energy.mp3`).
-- Built the **L2 Lucario dojo duel** — generalised the duel system to be
-  config-driven; dojo scene, sidestep dodge, Swords-Dance enrage.
-- Duel fixes: **scroll freeze** during a duel; **persistent dodge bar**
-  (bottom-left) + move bar (bottom-right); **projectiles now reach the boss**
-  (bolt / orb / dash via `pikaFire`/`bossAimPoint`); dev jump menu.
-- Intro reworked to **three Ash↔Pikachu exchanges → roar → "Ready to battle?"**;
-  removed the on-screen dialogue box. Intro beats are now **chained on audio
-  completion** (`tickIntro` waits for each clip's `ended` + a gap) so voices
-  never overlap; `voice()` returns its `<audio>` element to drive this.
-- Duel polish: Pikachu & Ash **planted on the floor, no idle sway**
-  (`DUEL_PIKA_DROP`, `still` flag on `drawCreature`, Ash bob removed); lighter
-  lair dusk tint so the bank reads clearly.
-- **L1 + L2 + L3 questions** converted to the 3-stage curated pools (L3 is now
-  multiplication, replacing the old +/− mix; exact-duplicate facts in the
-  supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
-
-## Recent fixes
-- **Clearer answer feedback** (runner + classic boss): the **correct** card turns
-  green, glows, and throws gold sparkles (`cardCheer`); the **wrong** card **pops**
-  like a balloon into themed fragments (`cardPop`, `drawCard` skips the popped card).
-  Green now shows **only on a correct answer** (no green on a miss); the pop is
-  punchier and the miss resolves a little quicker. (Wrong is confirmed when the
-  balloon clears Pikachu — the forgiving overlap window — so timing is unchanged.)
-- **Boss retries.** Losing a **duel** boss (energy → 0) no longer ends the run:
-  it spends one **heart** and restarts the fight fresh (`bossFail`/`enterBoss(retry)`,
-  no cutscene) — you get as many attempts as hearts remaining; game over only at 0
-  hearts. Hearts now show in the duel HUD (under Pikachu's bar). Classic maths
-  bosses already spend a heart per wrong answer (continuous attempts), unchanged.
-- **Super moves (30%) for both sides.** Pikachu's **Thunderbolt** is now a charged
-  super: ~1.6s wind-up with a glowing/shaking Pikachu, **invulnerable while
-  charging**, hits for 30% and isn't evaded. Each boss has a **signature heavy**
-  (Gyarados **Waterfall**, Lucario **Aura Sphere**): a ~2s glow+shake charge during
-  which the boss **can't be damaged**, then a telegraphed 30% attack to dodge
-  (`startHeavy`/`boss.charging`, `SUPER_DMG`). While Pikachu casts a *normal*
-  special he can't dodge, so the boss's hit lands — only Thunderbolt grants i-frames.
-- **Directional duel dodging** — boss attacks are now **low** (straight → JUMP ▲)
-  or **high** (lobbed arc → ROLL ◀/▶); the wrong button (or none) lets the hit
-  land, so hits actually connect. The correct dodge button(s) light up and the
-  prompt shows JUMP!/ROLL!. High shots lob over (`foeShots.arc`). Boss attacks a
-  little more often (`foeTimer` 2.4/3.2s). Per-hit damage is symmetric with
-  Pikachu (10 basic / 15 special); shared `foeHit()`.
-- **Boss attack now reaches Pikachu** — duel bosses fire a travelling blast
-  (`bossFire`/`foeShots`, water at the lake / aura in the dojo, tinted by the
-  special's colour) from their mouth to Pikachu, arriving as the dodge window
-  closes, with a splash on impact (`drawFoeShots`/`duelSplash`). Previously the
-  special only animated on the boss with nothing crossing to Pikachu.
-- **Power-button icons preloaded** so they're never blank (incl. dev-jump entry).
+## Recent work (this session) — *detail → archive*
+- **ABC & 123** younger game (audio recognition, content packs, difficulty toggle,
+  talking/celebrating transparent Ash portrait); 46 `say_*.mp3` via `slice_speech.py`.
+- **Spark Friends gallery** (per-pack saved, auto-show after a win).
+- **Duel combat overhaul:** projectiles reach Pikachu, directional dodge, super
+  moves (Thunderbolt / per-boss heavy, 30%), heart-based retries, Ash battle voice.
+- **Pre-battle announcer** + per-boss "it's <Boss>!" + Pikachu/foe cries; intro
+  simplified (dropped the Ash↔Pikachu coaching chatter).
+- New **Ash battle poses** + new **Waterfall** animation (`cutout_bg.py`); **Lucario
+  flip**; power-button icons preloaded.
+- **Clearer right/wrong feedback** (green sparkle / balloon pop); **scoring lane-choice
+  fix** (+ selftest guard). **3-stage volume**.
 
 ## Open items / TODO
-- **Tablet test pass (on-device)** — controls scale to a ~46 CSS-px physical-tap
-  floor (`rowDiameter` + live `RENDER_SCALE`); dodge arrows now sit bottom-left,
-  move bar bottom-right (separate clusters). Top-corner pause/mute scale too
-  (`layoutTopButtons`). Still needs **real hardware play-testing** to confirm
-  reach/size feel; revisit the floor (46px), `CTRL_PAD`, and zone widths.
-- **Balance tuning** (first-pass, untested): energy 100 each; move dmg 10/15;
-  dive at 30% HP heals 45%; submerge/sidestep-dodge 28%; rile at 18%; foe
-  wind-ups 1.15s/1.8s. Intro now audio-paced (no fixed length).
-- **Ash "transparency"** reported in the L1 duel: investigated — the committed
-  `ash_*.png` are 100% opaque (binary alpha) and `cleanSprite` removes 0 of his
-  pixels, so the asset/code are intact. Lightened the lair dusk tint as the
-  likely cause (dimming). If he still looks see-through, suspect a stale
-  deployed asset / browser cache, not the source.
-- **Earthquake** sheet missing — Gyarados's 4th move falls back to a static
-  image. Same for non-sequenced Pikachu moves (Charm, Reflect, G-Max) — they
-  animate only once 2×2 sheets are supplied.
-- **L3–L5 duels** not built (deferred by choice); L3–L5 bosses are classic maths.
-- **L4–L5 question pools** — could get the same curated 3-stage treatment as
-  L1–L3 once sets are supplied (L4 is currently still procedural × — overlaps L3,
-  so it likely needs redefining; L5 is the procedural +/−/× mix).
+**Next session (priority):**
+- **Bring L3 / L4 / L5 battle scenes in line with L1 / L2.** Make the classic maths
+  bosses (Venusaur, Scizor, Galarian Moltres) play as **action duels** with the same
+  gameplay/mechanics: per-boss duel config (`cfg.duel` + a `drawXBack` scene,
+  `atkSeqs`, `heavy`/`heavyName`, `roar`/`cry`, intro `lines`), directional dodge,
+  travelling projectiles, super moves, retries. Needs each boss's duel scene + move
+  / cry assets.
+- **Spark Friends page** — add a couple of features (e.g. tap a caught Pokémon to
+  hear its cry / preview its moves; nicer layout; drop-in `ACH_ANIM` strips).
+- **More audio clips + general tidying.**
+
+**Carried over:**
+- **On-device tablet test pass** — controls scale to a ~46 CSS-px tap floor
+  (`rowDiameter`/`RENDER_SCALE`); dodge arrows bottom-left, move bar bottom-right;
+  `layoutTopButtons`. Confirm reach/size feel; also eyeball the new pixel-art Ash
+  poses next to the vector scenes, and the prompt-box framing.
+- **Balance tuning** — supers 30%, base hits 10/15, boss heavy ~25% of attacks,
+  ~2s charge; Pikachu still out-DPSes the boss (attacks far more often). Dive heals
+  45% at 30% HP; evade/dodge 28%; rile at 18%. All dial-by-feel.
+- **Earthquake** sheet missing — Gyarados's 4th move falls back to a static image.
+  Same for non-sequenced Pikachu moves (Charm, Reflect, G-Max) until 2×2 sheets land.
+- **L4–L5 maths pools** — could get the curated 3-stage treatment like L1–L3 (L4 is
+  still procedural ×, overlaps L3; L5 is the procedural +/−/× mix).
 - Possible: weight the speed-run move mix; mid-level checkpoint.
 
 ## Layout quick-reference (in `sparkrunmath.html`)
-- Maths generators: `LEVELS`, `L1_POOLS`/`L2_POOLS`/`L3_POOLS`, `drawQ`/`QBAG`,
-  `makeChoices`.
-- Scenery: `SCENES`, `drawBackground` and its layer helpers.
-- Moves: `PIKA_MOVES`, `MOVE_SEQ`; bosses `BOSSES`, `BOSS_SEQ`.
-- Duel logic: `enterBoss`, `buildIntro`/`tickIntro`, `castMove`/`applyPikaHit`,
-  `pikaFire`/`bossAimPoint`/`bossImpact`, `foeAttack`, `doDodge`, `rileUp`,
-  `updateDuel`.
-- Duel drawing: `drawDuel`, `drawDojoBack`, `drawBossSprite`, `drawDuelBars`,
-  `drawMoveBar`, `drawDodgeButtons`, `drawShots`, `drawAsh`, `drawRoll`,
-  `drawPikaAttack`.
-- Input: `onPress`, the `keydown` handler (`MOVE_KEYS`); dev menu wiring at the
-  bottom of the script (`DEV`, `devJump`, `#devjump`).
+- Content/packs: `PACKS`/`selectPack`, maths `LEVELS`/`L1..3_POOLS`/`makeChoices`,
+  ABC `recogLevel`/`pickChoices`/`sayGlyph`/`SAY_CLIPS`.
+- Scoring & feedback: the play/boss lock blocks (`touched`, `gate.result`),
+  `overlapsBalloon`, `drawCard`, `cardCheer`/`cardPop`, `correctPop`/`oopsPuff`.
+- Gallery: `drawDex`/`drawMonInSlot`, `openDex`/`closeDex`, `caught`/`catchMon`,
+  `ACH_ANIM`, `dexBtnRect`.
+- Duel logic: `enterBoss`(+retry)/`bossFail`, `buildIntro`/`tickIntro`,
+  `castMove`/`applyPikaHit`, `foeAttack`/`bossFire`/`startHeavy`/`foeHit`/`doDodge`,
+  `rileUp`, `updateDuel`; `BOSSES` (`duel`/`heavy`/`atkSeqs`/`roar`/`cry`).
+- Duel/boss drawing: `drawDuel`/`drawDojoBack`, `drawBossSprite`, `drawDuelBars`,
+  `drawMoveBar`, `drawDodgeButtons`/`drawDodgePrompt`, `drawFoeShots`/`drawShots`,
+  `drawAsh`, `drawAshPrompt`.
+- Pre-battle audio: `preBattleClip`/`BOSS_VS_CLIP`/`PRE_DUR`, `bossIntroQueue`,
+  `bossHold`; Ash voice `ashWarn`/`ashSay`.
+- Audio/volume: `Audio8` (`cycleVol`/`volMul`), `voice` (channels
+  foe/pika/ash/prompt).
+- Input: `onPress`, `keydown` (`MOVE_KEYS`); dev menu (`DEV`/`devJump`/`#devjump`).

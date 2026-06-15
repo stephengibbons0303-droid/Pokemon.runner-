@@ -52,11 +52,12 @@ L3–L5 are still classic.
 - **Scene:** lake with a back basin + front surface so Gyarados sits **partly
   submerged**; he **rises out of the lake** on entry. Ash on the left bank,
   Pikachu beside him (crouched stance, not running).
-- **Scripted intro** (`buildIntro`/`tickIntro`, generic): three Ash↔Pikachu
-  coaching exchanges (Ash encourages, Pikachu replies each time) → the foe roars
-  and Pikachu answers → **"Ready to battle?"** prompt. Voice + Ash poses only,
-  no on-screen dialogue box. Sounds are sequenced with gaps and channelled (no
-  overlap). Tap skips the cutscene to the prompt.
+- **Scripted intro** (`buildIntro`/`tickIntro`, generic; **simplified**): the
+  pre-battle announcer lines lead (see *Pre-battle announcer*), then Pikachu's
+  battle cry → the foe's cry → **"Ready to battle?"** prompt. Voice + Ash poses
+  only, no dialogue box. Sounds are sequenced with gaps and channelled (no
+  overlap). Tap skips the cutscene to the prompt. (The old three Ash↔Pikachu
+  coaching exchanges were removed.)
 - **Energy bars** (0–100): Pikachu yellow (left), Gyarados blue (right); red at
   ≤10%. Hearts/charge meter hidden in the duel.
 - **Combat:** basic move = instant / 10% dmg; special = ~0.55s wind-up / 15%.
@@ -97,10 +98,87 @@ L3–L5 are still classic.
 - Shares all duel plumbing with Gyarados; differences are the four `cfg` fields
   plus the `duel==='dojo'` branches in scene/dodge/low-HP.
 
+## Duel combat — supers, directional dodge, projectiles, retries
+Built on the L1/L2 duel plumbing; all of this is **shared** by both duel bosses.
+- **Boss attack reaches Pikachu.** `foeAttack` spawns a travelling blast
+  (`bossFire` → `foeShots`, drawn by `drawFoeShots`): water (lake) / aura (dojo),
+  tinted by the move colour, launched from the boss's mouth and arriving as the
+  dodge window closes; `duelSplash` on impact. Cleared on faint.
+- **Directional dodging.** Each attack is **low** (straight → JUMP ▲) or **high**
+  (lobbed arc → ROLL ◀/▶, bigger `foeShots.arc`). `doDodge` checks the dodge vs
+  `boss.atkArc`; the wrong button (or none) lets the hit land (`foeHit`). The
+  correct dodge button(s) light up (`drawDodgeButtons`) and the prompt shows
+  JUMP!/ROLL!. Boss attacks every ~2.4s (basic) / ~3.2s (special).
+- **Super moves (30%, `SUPER_DMG`).** Pikachu's **Thunderbolt** is a charged super
+  (`castMove` → `pikaCast.super`): ~1.6s glow+shake wind-up, **invulnerable while
+  charging** (`foeHit` no-ops), not evaded, 30% damage. Each boss has a signature
+  **heavy** (`cfg.heavy`/`heavyName`: Gyarados Waterfall, Lucario Aura Sphere) it
+  occasionally charges (`startHeavy` → `boss.charging`, ~2s glow+shake, **can't be
+  damaged** — `canTarget` excludes it), then unleashes a telegraphed 30% attack.
+  Casting a *normal* special can't dodge (the hit lands); only Thunderbolt grants
+  i-frames. Per-hit base damage stays symmetric (10 basic / 15 special).
+- **Ash voice in battle:** "Be careful, Pikachu!" (`ash_careful.mp3`, `ashWarn`,
+  4s cooldown) on incoming specials/heavy; "You did it!" (`ash_youdidit.mp3`) on a
+  boss faint (duel and classic).
+- **Retries.** Losing a duel (energy → 0) spends one **heart** and restarts the
+  fight fresh, no cutscene (`bossFail` → `enterBoss(retry)`); attempts = hearts
+  remaining, game over only at 0. Hearts show in the duel HUD. Classic maths
+  bosses already spend a heart per wrong answer (continuous attempts).
+
+## Two games — content packs
+The same runner/boss engine drives two packs, picked on the start screen
+(`PACKS`, `selectPack`, `LEVELS` points at the active pack's levels):
+- **Maths** (older): the original written sums (unchanged).
+- **ABC & 123** (younger, audio recognition, `PACK.audio`): no reading. Ash's
+  portrait sits in the prompt box and **speaks** a letter/number (`sayGlyph` →
+  `say_<x>.mp3`, device speech-synth fallback); the child jumps to the matching
+  balloon. Levels (8 questions each): 1–10 / A–M / N–Z / 11–20 / A–Z
+  (`recogLevel`/`pickChoices`; gens return their own `choices` + an `audio` key).
+  - **Ash portrait** (`drawAshPrompt`, transparent cut-outs over the scene):
+    closed `ash_say0` → opens `ash_say1` **once** for the spoken clip
+    (`promptTalking`) → closed; **celebration** `ash_yay` for a moment on a correct
+    answer (`ashYayT`). Tap the box to replay.
+  - **Jump difficulty** toggle (round button by the ABC banner, saved `abcEasy`,
+    default **Easy**): Easy hops to the tapped lane and *holds* it (taps cycle
+    ground→mid→high, no timed arc); Tricky = the timed-jump arc. Maths is always
+    timed.
+- The duels (L1/L2) and classic bosses are shared by both packs.
+
+## Spark Friends gallery
+- Every Pokémon you defeat joins a gallery, **saved per pack** (`localStorage`,
+  key `sparkrun.caught.v1.<pack>`, `caught` set; `bossDefeated` → `catchMon`).
+- A `dex` state/screen (`drawDex`/`drawMonInSlot`), opened from the start-screen 🏆
+  button (`openDex`) and shown automatically after a win with the fresh catch
+  highlighted (`newlyCaught`, sparkles); uncaught slots show a `?` silhouette.
+- Per-Pokémon animations are drop-in: a horizontal frame strip + an `ACH_ANIM[name]`
+  entry (same `cw`/`ch`/`n` convention as the move strips); otherwise the static
+  boss sprite with an idle bob.
+
+## Pre-battle announcer (voice)
+Before each boss: "<player> has done his maths/numbers/letters…" → "it's <Boss>!"
+→ the intro. First line by pack/level (`ash_pre_maths/numbers/letters.mp3`, level
+`kind`); second per boss (`BOSS_VS_CLIP` → `ash_its_*.mp3`). Duels prepend both as
+intro beats; classic bosses drain a `bossIntroQueue` clip-by-clip (`bossHold`,
+per-clip `PRE_DUR`) before the first question. All announcer clips preloaded.
+
+## Answer feedback & scoring
+- **Correct** card turns green, glows, and bursts gold sparkles (`cardCheer` +
+  orbiting twinkles in `drawCard`). **Wrong** picked card **pops** like a balloon
+  into themed fragments (`cardPop`; `drawCard` skips the popped card). Green shows
+  **only on a correct answer**; the miss resolves a bit quicker (0.6s vs 0.9s).
+  Applies to the runner and classic bosses.
+- **Scoring requires the *chosen* lane.** A hit needs `player.lane === correctLane`
+  **and** the height overlap — so lanes merely passed through (rising or falling
+  back from a higher lane) no longer score. Guarded by a selftest case.
+
+## Volume
+- Three-stage button (`Audio8.cycleVol`/`volMul`): full → low (~32%) → mute →
+  full, scaling every output (chiptune, sfx, cheer, voice clips). Icon 🔊/🔉/🔇.
+
 ## Audio
 - `Audio8` chiptune + `music.mp3`/`music2.mp3` (speed-run crossfade) +
   `levelup.mp3`.
-- `voice(file, vol, chan)` one-shot clips with channels `foe`/`pika`/`ash`.
+- `voice(file, vol, chan)` one-shot clips with channels `foe`/`pika`/`ash`/`prompt`.
 
 ## Dev / testing aids
 - **Fullscreen toggle** — a small DOM `#fsbtn` in the top-left viewport corner
@@ -149,3 +227,15 @@ then committed as cleaned PNGs) roughly:
 In-game, run/jump/move/boss sheets are sliced by frame at draw time;
 `cleanSprite`/`cleanSheet`/`drawTinted` handle per-load fixes (fringe/dark-disc
 removal, neighbour-bleed, isolated hit-flash tint).
+
+### Asset tools (`tools/`)
+- **`slice_speech.py`** — cuts one recitation recording (A–Z or 1–20) into the
+  per-item `say_*.mp3` clips on the silences between items; **refuses** to export
+  unless the segment count matches the expected item count (so a run-together take
+  fails loudly instead of mislabelling). Used for the ABC voice set.
+- **`cutout_bg.py`** — knocks a flat/gradient background out of a portrait PNG
+  (edge region-grow + halo cleanup; tunable ref/tolerances). Used for the
+  transparent Ash portraits and the Waterfall frames.
+- **`extract_lucario.py`** — Lucario move-strip extraction (sources under
+  `tools/lucario_sheets/`).
+- ffmpeg for these came from the `imageio-ffmpeg` pip package (no system ffmpeg).
