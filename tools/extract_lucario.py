@@ -114,19 +114,23 @@ def cutout(a, box, pad=10):
     out = out[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     return out, (xs.max() + xs.min()) / 2 - xs.min(), float(ys.max() - ys.min())
 
-def build(frames, target_h=240, padx=26, padtop=20, padbot=14):
-    """Uniform scale across the 4 frames (median height); bottom-align on a common
-    baseline and centre horizontally so Lucario stays put while the FX plays."""
-    scale = target_h / np.median([h for _, _, h in frames])
+# Shared geometry so EVERY move renders Lucario at the same on-screen size. In-game
+# a strip's whole cell HEIGHT is scaled to a fixed size, so all strips must share one
+# cell height (ch); body size is set from the prep pose (frame 0), which is the same
+# stance in every sheet. cw may differ per move (width doesn't affect body scale).
+TARGET_BODY = 240                  # scaled height of the prep-pose Lucario
+PADX, PADTOP, PADBOT = 26, 22, 14
+
+def build(frames, scale, ch, padx=PADX, padbot=PADBOT):
+    """Place 4 frames at a SHARED scale and cell height, bottom-aligned on a common
+    baseline and centred horizontally, so Lucario stays put while the FX plays."""
     sized = []
     for rgba, cx, _ in frames:
         im = Image.fromarray(rgba, 'RGBA')
         im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
         sized.append((im, cx * scale))
     left = max(cx for _, cx in sized); right = max(im.width - cx for im, cx in sized)
-    top = max(im.height for im, _ in sized)
     cw = int(left + right) + 2 * padx
-    ch = int(top) + padtop + padbot
     axc = int(left) + padx                                  # common horizontal anchor
     baseY = ch - padbot                                     # common baseline (feet)
     strip = Image.new('RGBA', (cw * 4, ch), (0, 0, 0, 0))
@@ -135,21 +139,28 @@ def build(frames, target_h=240, padx=26, padtop=20, padbot=14):
     return strip, cw
 
 def main():
-    previews = []
+    # 1) cut every present sheet's 4 frames
+    sheets = []
     for fname, key, label in SHEETS:
         path = os.path.join(SRC, fname)
         if not os.path.exists(path):
             continue                                        # process only the redone sheets uploaded so far
         a = np.asarray(Image.open(path).convert('RGB')).astype(int)
-        boxes = find_frames(a)
-        frames = [cutout(a, b) for b in boxes]
-        strip, cw = build(frames)
+        frames = [cutout(a, b) for b in find_frames(a)]
+        sheets.append((key, label, frames))
+    if not sheets:
+        print('No redone sheets found in', SRC); return
+    # 2) ONE shared scale (from the prep pose) + ONE shared cell height (tallest scaled
+    #    frame across all moves, so no FX is clipped) — keeps every move the same size.
+    scale = TARGET_BODY / np.median([fr[0][2] for _, _, fr in sheets])      # fr[0] = prep frame; [2] = its height
+    ch = int(round(max(h for _, _, fr in sheets for _, _, h in fr) * scale)) + PADTOP + PADBOT
+    previews = []
+    for key, label, frames in sheets:
+        strip, cw = build(frames, scale, ch)
         outp = os.path.join(ROOT, f'luca_seq_{key}.png')
         strip.save(outp)
-        print(f'{label:13s} -> luca_seq_{key}.png  {strip.width}x{strip.height}  (BOSS_SEQ: cw={cw}, ch={strip.height})')
+        print(f'{label:13s} -> luca_seq_{key}.png  {strip.width}x{strip.height}  (BOSS_SEQ: cw={cw}, ch={ch})')
         previews.append((label, strip))
-    if not previews:
-        print('No redone sheets found in', SRC); return
     W = max(s.width for _, s in previews)
     H = sum(s.height for _, s in previews) + 20 * len(previews)
     sheet = Image.new('RGBA', (W, H), (255, 0, 255, 255))
