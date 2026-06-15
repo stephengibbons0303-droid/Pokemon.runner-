@@ -30,6 +30,20 @@ _Last updated: 2026-06-14._
   `#devjump` start-screen dev menu (`DEV` flag) to jump to any level/boss.
 
 ## Recent work (this session)
+- **Two games via content packs** — same runner/boss engine, selectable on the
+  start screen. `PACKS.maths` (the original written sums, unchanged) and
+  `PACKS.abc` (younger, audio recognition). `LEVELS` now points at the active
+  pack; `selectPack()` swaps content + the per-child gallery save
+  (`sparkrun.caught.v1.<pack>`).
+- **Younger "ABC & 123" game** — Ash *speaks* a letter/number (his headshot
+  replaces the written sum in the prompt box; tap it to replay) and the child
+  jumps to the matching balloon. Numbers 1–20, uppercase A–Z, 8 questions/level,
+  same Pokémon bosses. `recogLevel`/`pickChoices` build the content; gens return
+  their own `choices` + an `audio` key; `sayGlyph()` plays `say_<x>.mp3` (falls
+  back to device speech-synth if a clip is missing).
+- **Voice clips** — Ash's recorded A–Z and 1–20 sliced into 46 `say_*.mp3`
+  via `tools/slice_speech.py` (silence-split, refuses on a count mismatch).
+- selftest extended with a section [4] covering the audio pack.
 - **Flipped Lucario** to face Pikachu in the dojo duel (per-boss `flip` flag,
   mirrors idle / hurt / move cut-ins in `drawBossSprite`).
 - **Achievement gallery ("Spark Friends")** — new `dex` screen + state. Defeating

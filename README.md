@@ -9,6 +9,22 @@ overlaid with supplied Pokémon/Ash sprite sheets and voice clips.
 **Play:** open `sparkrunmath.html` (or `index.html`, which redirects to it).
 Hosted via GitHub Pages.
 
+## Two games (pick a player on the start screen)
+
+The same runner/boss engine drives two content packs:
+
+- **Maths** (ages 6–8) — the written-sum game described below.
+- **ABC & 123** (little ones) — no reading required. Ash's headshot sits in the
+  prompt box and **speaks** a letter or number (tap his face to hear it again);
+  the child jumps to the balloon that matches. Numbers **1–20**, uppercase
+  **A–Z**, 8 questions per level, same Pokémon bosses. Voice is Ash's recorded
+  clips (`say_a.mp3 … say_z.mp3`, `say_1.mp3 … say_20.mp3`), with the device's
+  speech-synth as a fallback. Each child keeps their **own** Spark Friends
+  gallery.
+
+Add per-Pokémon gallery animations or more spoken sets the same drop-in way as
+the rest of the assets (see `ACH_ANIM` and `say_*.mp3` / `tools/slice_speech.py`).
+
 ## How to play
 
 - **Runner (levels 1–5):** the creature auto-runs and three answers float at the

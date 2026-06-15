@@ -93,6 +93,7 @@ let code = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).jo
 // expose the let/const-scoped game internals so the harness can drive a real game
 code += `\n;globalThis.__g = {
   get state(){return state;}, get score(){return score;}, get hearts(){return hearts;}, get gate(){return gate;}, get player(){return player;},
+  get packId(){return packId;}, get PACK(){return PACK;}, selectPack,
   update, hop, startLevel, overlapsBalloon, PLAYER_X, CARD_W, PIKA_HALF_W };`;
 
 const sb = buildSandbox();
@@ -155,6 +156,20 @@ check('high answer, double-jump scores', hi && hi.scored);
 // skill preserved: never jumping for a raised-lane answer must miss
 const noJump = (function () { for (let i = 0; i < 60; i++) { const r = trial(null); if (r.correct !== 0) return r; } return null; })();
 check('raised-lane answer with no jump misses', noJump && noJump.scored === false);
+
+console.log('[4] younger (audio) pack — recognition content + same scoring');
+g.selectPack('abc');
+check('selectPack switches active pack', g.packId === 'abc' && g.PACK.audio === true);
+g.startLevel(0);
+const aq = g.gate;
+const okShape = aq && Array.isArray(aq.choices) && aq.choices.length === 3
+  && aq.choices.includes(aq.ans) && aq.correctLane === aq.choices.indexOf(aq.ans)
+  && aq.audio === aq.ans && /^([1-9]|1[0-9]|20|[a-z])$/i.test(String(aq.ans));
+check('audio gate has 3 choices incl. answer + matching audio key', okShape,
+      aq && JSON.stringify({choices:aq.choices, ans:aq.ans, audio:aq.audio, lane:aq.correctLane}));
+const abcScore = trial(360);
+check('younger pack: jump-to-match still scores', abcScore.scored);
+g.selectPack('maths');   // restore for any later checks
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : 'FAILED — ' + failures + ' failure(s)'));
 process.exit(failures === 0 ? 0 : 1);

@@ -520,7 +520,7 @@ const L3_POOLS = [
 
 // each level is a 25-question run: gen(step 0..24) -> {q,ans}.
 // optional bossGen() gives the end-of-level duel its own flavour of questions.
-const LEVELS = [
+const MATHS_LEVELS = [
   { name:'Bloom Meadow',  theme:'balloon', count:25,
     // L1 — addition in three difficulty stages, drawn at random (no repeats) from
     // fixed pools: Q1–8 single digit (≤9), Q9–17 into the teens/twenties,
@@ -573,6 +573,63 @@ function makeChoices(ans){
 }
 
 /* ============================================================
+   CONTENT PACKS — the same runner/boss engine, different content.
+     • maths  : the original written sums (eldest)
+     • abc    : audio number/letter recognition (younger) — Ash speaks a
+                letter/number; the child jumps to the balloon that matches.
+   A pack supplies its own levels; an `audio` pack swaps the written prompt for
+   Ash's headshot + a spoken clip, and its level `gen` returns the answer
+   choices directly (since letter/number distractors differ from maths).
+   ============================================================ */
+// pick `ans` + (count-1) distractors from `pool`, drop the answer in a random lane
+function pickChoices(ans, pool){
+  const set=new Set([ans]); let guard=0;
+  while(set.size<3 && guard++<80){ set.add(pick(pool)); }
+  const distract=[...set].filter(v=>v!==ans);
+  const out=[null,null,null], correctLane=rnd(0,2); out[correctLane]=ans;
+  let di=0; for(let i=0;i<3;i++){ if(i!==correctLane) out[i]=distract[di++]; }
+  return out;
+}
+const NUMS = n=>Array.from({length:n},(_,i)=>String(i+1));            // ['1'..'n']
+const LETTERS = (a,b)=>{ const o=[]; for(let c=a.charCodeAt(0);c<=b.charCodeAt(0);c++) o.push(String.fromCharCode(c)); return o; };
+// one audio-recognition level: pick a target from `pool`, speak it, show 3 choices
+function recogLevel(name, theme, pool){
+  return { name, theme, count:8, pool,
+    gen:()=>{ const t=pick(pool); return { q:t, ans:t, choices:pickChoices(t,pool), audio:t }; } };
+}
+const ABC_LEVELS = [
+  recogLevel('Bloom Meadow',  'balloon', NUMS(5)),            // 1–5
+  recogLevel('Orchard Hop',   'apple',   NUMS(10)),           // 1–10
+  recogLevel('Bubble Bay',    'bubble',  NUMS(20)),           // 1–20
+  recogLevel('Crystal Caves', 'crystal', LETTERS('A','M')),   // A–M
+  recogLevel('Star Summit',   'crystal', LETTERS('A','Z')),   // A–Z
+];
+
+const PACKS = {
+  maths: { id:'maths', title:'Maths',      sub:'ages 6–8',  levels:MATHS_LEVELS, audio:false },
+  abc:   { id:'abc',   title:'ABC & 123',  sub:'little ones', levels:ABC_LEVELS,  audio:true  },
+};
+let packId='maths', PACK=PACKS.maths, LEVELS=MATHS_LEVELS;
+function selectPack(id){
+  if(!PACKS[id]) id='maths';
+  packId=id; PACK=PACKS[id]; LEVELS=PACK.levels;
+  caught=loadCaught();                                        // each child has their own gallery
+  try{ localStorage.setItem('sparkrun.pack', id); }catch(e){}
+}
+
+/* ---- spoken prompts: play the recorded clip if we have it, else the device voice ---- */
+const SAY_CLIPS = new Set([...'abcdefghijklmnopqrstuvwxyz'.split(''), ...NUMS(20)]);
+function sayGlyph(v){
+  const key=String(v).toLowerCase();
+  if(SAY_CLIPS.has(key)){ voice('say_'+key+'.mp3', 1, 'prompt'); return; }
+  try{                                                        // fallback: device speech synthesis
+    if(typeof speechSynthesis==='undefined' || Audio8.isMuted()) return;
+    const u=new SpeechSynthesisUtterance(/^[a-z]$/.test(key)?key.toUpperCase():key);
+    u.rate=0.85; u.pitch=1.1; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+/* ============================================================
    GAME STATE
    ============================================================ */
 let state='menu';           // menu | play | resolve | levelup | over | won | dex
@@ -582,9 +639,9 @@ let prizes=[];              // collected sparks per level
 
 /* Achievement gallery: the set of Pokémon names the player has ever defeated,
    persisted in localStorage so it carries across sessions. */
-const CAUGHT_KEY='sparkrun.caught.v1';
-function loadCaught(){ try{ return new Set(JSON.parse(localStorage.getItem(CAUGHT_KEY)||'[]')); }catch(e){ return new Set(); } }
-function saveCaught(){ try{ localStorage.setItem(CAUGHT_KEY, JSON.stringify([...caught])); }catch(e){ /* private mode / file:// — gallery just won't persist */ } }
+function caughtKey(){ return 'sparkrun.caught.v1.'+packId; }    // each pack keeps its own gallery
+function loadCaught(){ try{ return new Set(JSON.parse(localStorage.getItem(caughtKey())||'[]')); }catch(e){ return new Set(); } }
+function saveCaught(){ try{ localStorage.setItem(caughtKey(), JSON.stringify([...caught])); }catch(e){ /* private mode / file:// — gallery just won't persist */ } }
 let caught=loadCaught();
 function catchMon(name){ if(caught.has(name)) return false; caught.add(name); saveCaught(); return true; }
 let dexReturn='menu';       // where a tap on the gallery screen goes next (menu | levelup | won)
@@ -669,13 +726,14 @@ function devJump(kind, idx){
 
 function spawnGate(){
   const L=LEVELS[levelIdx];
-  const {q,ans}=L.gen(stepInLvl);
-  const choices=makeChoices(ans);
+  const {q,ans,choices,audio}=L.gen(stepInLvl);
+  const ch = choices || makeChoices(ans);                 // packs may supply their own choices
   // slow at first; ramps with step and level, but capped so a 25-question run stays fair
   const base=92 + levelIdx*16;
   speed = base + Math.min(90, stepInLvl*5);
-  gate={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
+  gate={ x:W+CARD_W, q, ans, choices:ch, correctLane:ch.indexOf(ans), audio, locked:false, result:null, resolveT:0 };
   groundPlayer();
+  if(PACK.audio) sayGlyph(audio!=null?audio:ans);         // speak the prompt for the younger game
 }
 
 /* ============================================================
@@ -923,9 +981,10 @@ function spawnChallenge(){
   groundPlayer();
   const L=LEVELS[levelIdx];
   // boss uses its own question style if defined, else the level's hardest stretch
-  const {q,ans} = L.bossGen ? L.bossGen() : L.gen(rnd(Math.floor(L.count*0.6), L.count-1));
-  const choices=makeChoices(ans);
-  bossChal={ x:W+CARD_W, q, ans, choices, correctLane:choices.indexOf(ans), locked:false, result:null, resolveT:0 };
+  const {q,ans,choices,audio} = L.bossGen ? L.bossGen() : L.gen(rnd(Math.floor(L.count*0.6), L.count-1));
+  const ch = choices || makeChoices(ans);
+  bossChal={ x:W+CARD_W, q, ans, choices:ch, correctLane:ch.indexOf(ans), audio, locked:false, result:null, resolveT:0 };
+  if(PACK.audio) sayGlyph(audio!=null?audio:ans);
 }
 // the boss's real on-screen body point, so projectiles/bolts actually land on it
 function bossAimPoint(){
@@ -1010,6 +1069,7 @@ function hop(){
 const MUTE={x:W-58,y:18,w:40,h:40};
 const PAUSE={x:W-106,y:18,w:40,h:40};                          // pause toggle, left of mute
 function dexBtnRect(){ return {x:18,y:18,w:104,h:40}; }        // start-screen gallery button (top-left)
+const PROMPT={x:W/2-150, y:22, w:300, h:84};                   // top-centre prompt box (text sum, or Ash headshot in the audio pack)
 const RESUME={x:W/2-150,y:H/2+20,w:300,h:64};                  // big resume button on the pause overlay
 // Size the top-corner pause/mute buttons to the physical-tap floor (capped so
 // they stay tidy in the HUD) and re-anchor them from the top-right each frame.
@@ -1035,9 +1095,18 @@ function onPress(e){
   e.preventDefault();
   const p=canvasPoint(e);
   if(pointInMute(p.x,p.y)){ Audio8.toggle(); Audio8.sfx('select'); return; }
-  if(state==='menu' && pointInRect(dexBtnRect(),p.x,p.y)){ openDex(); return; }    // gallery button
+  if(state==='menu'){                                                              // start screen: gallery + pick a player
+    if(pointInRect(dexBtnRect(),p.x,p.y)){ openDex(); return; }
+    const pr=playBtnRects();
+    if(pointInRect(pr.maths,p.x,p.y)){ selectPack('maths'); startRun(); return; }
+    if(pointInRect(pr.abc,p.x,p.y)){ selectPack('abc'); startRun(); return; }
+    return;                                                                        // ignore other taps on the menu
+  }
   if(inGameplay() && pointInRect(PAUSE,p.x,p.y)){ setPaused(!paused); return; }   // pause / unpause
   if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
+  if(PACK.audio && inGameplay() && pointInRect(PROMPT,p.x,p.y)){                   // younger game: tap Ash to hear it again
+    const it=(state==='boss')?bossChal:gate; if(it){ sayGlyph(it.audio!=null?it.audio:it.ans); return; }
+  }
   if(state==='boss' && bossMode==='duel'){             // lair duel input
     if(bossPhase==='intro'){ if(introReady) duelBegin(); else skipIntro(); return; }   // tap: skip cutscene, then start
     for(const r of dodgeBtnRects()){ if(pointInRect(r,p.x,p.y)){ doDodge(r.dir); return; } }   // bottom-left: dodge (only bites during a wind-up)
@@ -1469,6 +1538,31 @@ function drawCard(x,y,val,theme,selected,reveal){
 }
 
 function sparkle(r){ g.beginPath(); for(let i=0;i<8;i++){ const a=i*Math.PI/4, rad=(i%2===0)?r:r*0.4; g.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);} g.closePath(); g.fill(); }
+
+/* Younger game: Ash's headshot in the prompt box. He "says" the target letter/
+   number (audio fires on spawn; tapping the box replays it). Prefers a dedicated
+   ash_head.png if supplied, else crops the head from the full Ash sprite. */
+function drawAshPrompt(P){
+  g.save();
+  rr(P.x,P.y,P.w,P.h,20);
+  g.save(); g.clip();                                    // keep the portrait inside the rounded box
+  g.fillStyle='rgba(35,22,53,.92)'; g.fillRect(P.x,P.y,P.w,P.h);
+  const head=bossSprite('ash_head.png'), full=bossSprite('ash_point.png');
+  if(head&&head.ready){                                  // dedicated headshot → cover the left square
+    const im=spr2d(head), sz=P.h, s=Math.max(sz/im.width,sz/im.height), w=im.width*s, h=im.height*s;
+    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+sz/2-w/2, P.y+sz/2-h/2, w, h);
+  } else if(full&&full.ready){                           // crop the head from the full body sprite
+    const im=spr2d(full), h=P.h*4.4, w=im.width*(h/im.height);
+    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+P.h*0.5-w/2, P.y-h*0.05, w, h);
+  }
+  g.restore();                                           // end clip
+  g.strokeStyle=C.glow; g.lineWidth=3; rr(P.x,P.y,P.w,P.h,20); g.stroke();
+  g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle=C.glow; g.font='700 34px Fredoka, sans-serif'; g.fillText('🔊', P.x+P.w*0.56, P.y+P.h/2-9);
+  g.fillStyle=C.cream; g.font='600 16px Fredoka, sans-serif'; g.fillText('tap to hear', P.x+P.w*0.7, P.y+P.h/2+20);
+  g.textAlign='left'; g.textBaseline='alphabetic';
+  g.restore();
+}
 function drawParticles(){
   trail.forEach(p=>{ g.globalAlpha=Math.max(0,p.life*2); g.fillStyle=p.c; g.beginPath(); g.arc(p.x,p.y,p.r,0,7); g.fill(); });
   g.globalAlpha=1;
@@ -1483,13 +1577,16 @@ function drawParticles(){
 function drawHUD(){
   // problem banner (top center) — only while a gate is live
   if((state==='play'||state==='resolve') && gate){
-    g.save();
-    const bw=300, bx=W/2-bw/2, by=24, bh=70;
-    g.fillStyle='rgba(35,22,53,.78)'; rr(bx,by,bw,bh,20); g.fill();
-    g.strokeStyle=C.glow; g.lineWidth=3; rr(bx,by,bw,bh,20); g.stroke();
-    g.fillStyle=C.cream; g.font='700 44px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(gate.q+' = ?', W/2, by+bh/2+2);
-    g.restore();
+    if(PACK.audio){ drawAshPrompt(PROMPT); }                  // younger game: Ash speaks, no written sum
+    else {
+      g.save();
+      const bw=300, bx=W/2-bw/2, by=24, bh=70;
+      g.fillStyle='rgba(35,22,53,.78)'; rr(bx,by,bw,bh,20); g.fill();
+      g.strokeStyle=C.glow; g.lineWidth=3; rr(bx,by,bw,bh,20); g.stroke();
+      g.fillStyle=C.cream; g.font='700 44px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+      g.fillText(gate.q+' = ?', W/2, by+bh/2+2);
+      g.restore();
+    }
   }
   // score (top-left) — dark shadow keeps the light text legible on bright daytime scenes
   g.save(); g.shadowColor='rgba(0,0,0,.55)'; g.shadowBlur=4; g.shadowOffsetY=1;
@@ -1559,25 +1656,30 @@ function drawMenu(){
   g.font='700 84px Fredoka, sans-serif';
   g.fillStyle=C.glow; g.fillText('Spark Run',W/2+3,150+3);
   g.fillStyle=C.coral; g.fillText('Spark Run',W/2,150);
-  g.fillStyle=C.cream; g.font='600 26px Fredoka, sans-serif'; g.fillText('A Maths Adventure',W/2,196);
+  g.fillStyle=C.cream; g.font='600 26px Fredoka, sans-serif'; g.fillText('Pick a player',W/2,196);
   // mascot demo
-  drawCreature(W/2,300,'happy');
-  // how-to
-  g.font='600 22px Fredoka, sans-serif'; g.fillStyle=C.cream;
-  g.fillText('Tap to JUMP to the right answer', W/2, 388);
-  g.fillStyle='rgba(255,244,230,.92)'; g.font='600 18px Fredoka, sans-serif';
-  g.fillText('tap once = middle • double-tap = high jump', W/2, 416);
+  drawCreature(W/2,292,'happy');
   g.restore();
-  // start button
-  const bw=280,bx=W/2-bw/2,by=448,bh=60;
-  g.fillStyle=C.leaf; rr(bx,by,bw,bh,22); g.fill();
-  g.fillStyle='#fff'; g.font='700 30px Fredoka, sans-serif'; g.textBaseline='middle'; g.fillText('▶  Play',W/2,by+bh/2+1); g.textBaseline='alphabetic';
+  // two games — older (written maths) / younger (audio ABC & 123)
+  const pr=playBtnRects();
+  drawPlayBtn(pr.maths, C.leaf,    '🔢  Maths',     PACKS.maths.sub);
+  drawPlayBtn(pr.abc,   '#b85c3a', '🔡  ABC & 123', PACKS.abc.sub);
   // achievement gallery button (top-left) with a caught counter
   const db=dexBtnRect();
   g.fillStyle='rgba(35,22,53,.7)'; rr(db.x,db.y,db.w,db.h,12); g.fill();
   g.fillStyle=C.glow; g.font='600 20px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='middle';
   g.fillText('🏆 '+caught.size+'/'+BOSSES.length, db.x+13, db.y+db.h/2+1);
   g.textAlign='center'; g.textBaseline='alphabetic';
+}
+function playBtnRects(){ const bw=320, bx=W/2-bw/2, bh=62, gap=14, by=404;
+  return { maths:{x:bx,y:by,w:bw,h:bh}, abc:{x:bx,y:by+bh+gap,w:bw,h:bh} }; }
+function startRun(){ Audio8.startMusic(); startLevel(0); }
+function drawPlayBtn(r, col, title, sub){
+  g.fillStyle=col; rr(r.x,r.y,r.w,r.h,20); g.fill();
+  g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle='#fff'; g.font='700 26px Fredoka, sans-serif'; g.fillText(title, r.x+r.w/2, r.y+r.h/2-7);
+  g.fillStyle='rgba(255,255,255,.85)'; g.font='600 14px Fredoka, sans-serif'; g.fillText(sub, r.x+r.w/2, r.y+r.h/2+15);
+  g.textBaseline='alphabetic';
 }
 
 /* Draw one Pokémon inside a gallery slot, centred at (cx,cy) at on-screen height
@@ -1882,13 +1984,16 @@ function drawBoss(){
       drawCard(bossChal.x, y, bossChal.choices[lane], LEVELS[levelIdx].theme, !bossChal.locked&&lane===liveLane(), reveal);
     }
   }
-  // problem banner so the player can read the sum
+  // problem banner so the player can read the sum (or hear it, in the younger game)
   if(bossChal){
-    const bw=300, bx=W/2-bw/2, by=58, bh=58;
-    g.fillStyle='rgba(35,22,53,.78)'; rr(bx,by,bw,bh,18); g.fill();
-    g.strokeStyle=C.glow; g.lineWidth=3; rr(bx,by,bw,bh,18); g.stroke();
-    g.fillStyle=C.cream; g.font='700 36px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(bossChal.q+' = ?', W/2, by+bh/2+2); g.textAlign='left'; g.textBaseline='alphabetic';
+    if(PACK.audio){ drawAshPrompt(PROMPT); }
+    else {
+      const bw=300, bx=W/2-bw/2, by=58, bh=58;
+      g.fillStyle='rgba(35,22,53,.78)'; rr(bx,by,bw,bh,18); g.fill();
+      g.strokeStyle=C.glow; g.lineWidth=3; rr(bx,by,bw,bh,18); g.stroke();
+      g.fillStyle=C.cream; g.font='700 36px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+      g.fillText(bossChal.q+' = ?', W/2, by+bh/2+2); g.textAlign='left'; g.textBaseline='alphabetic';
+    }
   }
   drawZaps(); drawShots();   // bolts + flying orbs
   // Pikachu: show the move sprite while attacking, else the usual runner
