@@ -89,6 +89,9 @@ _Last updated: 2026-06-14._
   supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
 
 ## Recent fixes
+- **Clearer answer feedback** (runner + classic boss): the **correct** card turns
+  green, glows, and throws gold sparkles (`cardCheer`); the **wrong** card **pops**
+  like a balloon into themed fragments (`cardPop`, `drawCard` skips the popped card).
 - **Boss retries.** Losing a **duel** boss (energy → 0) no longer ends the run:
   it spends one **heart** and restarts the fight fresh (`bossFail`/`enterBoss(retry)`,
   no cutscene) — you get as many attempts as hearts remaining; game over only at 0
