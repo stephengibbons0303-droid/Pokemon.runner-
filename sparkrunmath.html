@@ -609,12 +609,16 @@ function recogLevel(name, theme, pool){
   return { name, theme, count:8, pool, kind: /[0-9]/.test(pool[0]) ? 'numbers' : 'letters',
     gen:()=>{ const t=pick(pool); return { q:t, ans:t, choices:pickChoices(t,pool), audio:t }; } };
 }
-// younger game: Ash's pre-battle announcer line, chosen by the level's content
+// Ash's pre-battle announcer line, chosen by the pack/level content. Durations are
+// known so classic bosses can hold the first question until the line finishes.
+const PRE_DUR = { 'ash_pre_maths.mp3':6.6, 'ash_pre_numbers.mp3':3.6, 'ash_pre_letters.mp3':3.4 };
 function preBattleClip(){
   const L=LEVELS[levelIdx];
-  if(!PACK.audio || !L || !L.kind) return null;
-  return L.kind==='numbers' ? 'ash_pre_numbers.mp3' : 'ash_pre_letters.mp3';
+  if(PACK.audio) return (L && L.kind==='numbers') ? 'ash_pre_numbers.mp3' : 'ash_pre_letters.mp3';
+  return 'ash_pre_maths.mp3';                                 // older maths game
 }
+// preload the announcer clips so their .duration is ready by the time a boss starts
+['ash_pre_maths.mp3','ash_pre_numbers.mp3','ash_pre_letters.mp3'].forEach(f=>{ try{ const a=new Audio(); a.preload='auto'; a.src=f; VOICES[f]=a; }catch(e){} });
 const ABC_LEVELS = [
   recogLevel('Bloom Meadow',  'balloon', NRANGE(1,10)),       // Gyarados — numbers 1–10
   recogLevel('Orchard Hop',   'apple',   LETTERS('A','M')),   // Lucario  — letters A–M
@@ -790,7 +794,7 @@ function enterBoss(){
     if(pre) introBeats.unshift({ gap:0.4, fn:()=>{ ashShow('point',3.6); return voice(pre,1,'ash'); } });  // announcer leads the intro
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
-    if(pre){ voice(pre,1,'ash'); bossHold = Audio8.isMuted()?0:3.6; }   // hold the first question until the announcer finishes
+    if(pre){ voice(pre,1,'ash'); bossHold = Audio8.isMuted()?0:(PRE_DUR[pre]||3.6); }   // hold the first question until the announcer finishes
   }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */

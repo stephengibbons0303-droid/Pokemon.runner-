@@ -44,10 +44,11 @@ _Last updated: 2026-06-14._
   own `choices` + an `audio` key; `sayGlyph()` plays `say_<x>.mp3` (falls back to
   device speech-synth if a clip is missing) and drives the lip-flap via
   `promptTalking()`.
-- **Pre-battle announcer** (younger game) — Ash calls out the child before each
-  boss, chosen by the level's content: `ash_pre_numbers.mp3` /
-  `ash_pre_letters.mp3` (level `kind`). Leads the duel intro (prepended beat) and,
-  for classic bosses, holds the first question until the line finishes (`bossHold`).
+- **Pre-battle announcer** — Ash calls out the child before each boss, by pack/
+  content: `ash_pre_maths.mp3` (older), `ash_pre_numbers.mp3` /
+  `ash_pre_letters.mp3` (younger, by level `kind`). Leads the duel intro (prepended
+  beat) and, for classic bosses, holds the first question until the line finishes
+  (`bossHold`, per-clip `PRE_DUR`; clips preloaded so durations are known).
 - **Three-stage volume** — the audio button cycles full → low → mute → full
   (`Audio8.cycleVol`/`volMul`), scaling every output.
 - **Voice clips** — Ash's recorded A–Z and 1–20 sliced into 46 `say_*.mp3`
