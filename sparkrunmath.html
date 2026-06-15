@@ -756,12 +756,12 @@ function cardCheer(cx,cy){
   for(let i=0;i<18;i++){ const a=Math.random()*Math.PI*2, sp=90+Math.random()*210;
     stars.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.55+Math.random()*0.4,r:6+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*16,c:pick([C.glow,'#ffe9a0','#fff',C.glow])}); }
 }
-// the WRONG answer card bursts like a popped balloon
+// the WRONG answer card bursts like a popped balloon — a quick, punchy pop
 function cardPop(cx,cy,col){
-  rings.push({x:cx,y:cy,r:18,maxR:120,life:0.40,col,lw:7});
-  rings.push({x:cx,y:cy,r:6, maxR:80, life:0.32,col:'#fff',lw:4});
-  for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2, sp=120+Math.random()*250;
-    confetti.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-30,life:0.55+Math.random()*0.35,r:5+Math.random()*5,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c: Math.random()<0.55?col:'#fff'}); }
+  rings.push({x:cx,y:cy,r:24,maxR:150,life:0.28,col:'#fff',lw:8});   // fast white flash
+  rings.push({x:cx,y:cy,r:14,maxR:120,life:0.34,col,lw:6});
+  for(let i=0;i<18;i++){ const a=Math.random()*Math.PI*2, sp=200+Math.random()*300;   // faster shrapnel, shorter-lived
+    confetti.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-40,life:0.32+Math.random()*0.22,r:5+Math.random()*5,rot:Math.random()*6,vr:(Math.random()-0.5)*22,c: Math.random()<0.55?col:'#fff'}); }
 }
 
 // little stumble on a wrong answer: a grey dust puff + a few dizzy "★" sparks over Pikachu's head
@@ -1362,7 +1362,7 @@ function update(dt){
       gate.locked=true;
       gate.result=touched;
       gate.pickLane=touched?gate.correctLane:liveLane();   // which card to flag on the reveal
-      gate.resolveT=0.9;
+      gate.resolveT=touched?0.9:0.6;                       // a miss clears a little quicker
       if(player.jumping) player.descending=true;        // card's passed — drop back to the ground
       if(gate.result){
         score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
@@ -2154,8 +2154,8 @@ function drawBoss(){
       const y=LANE_Y[lane]-CARD_H/2;
       let reveal=null;
       if(bossChal.locked){
-        if(lane===bossChal.correctLane) reveal='right';
-        else if(lane===bossChal.pickLane && !bossChal.result) reveal='wrong';
+        if(bossChal.result && lane===bossChal.correctLane) reveal='right';   // green only when answered correctly
+        else if(!bossChal.result && lane===bossChal.pickLane) reveal='wrong'; // the wrong pick pops
       }
       drawCard(bossChal.x, y, bossChal.choices[lane], LEVELS[levelIdx].theme, !bossChal.locked&&lane===liveLane(), reveal);
     }
@@ -2472,8 +2472,8 @@ function render(){
       const y=LANE_Y[lane]-CARD_H/2;
       let reveal=null;
       if(state==='resolve'){
-        if(lane===gate.correctLane) reveal='right';
-        else if(lane===gate.pickLane && !gate.result) reveal='wrong';
+        if(gate.result && lane===gate.correctLane) reveal='right';   // green only when answered correctly
+        else if(!gate.result && lane===gate.pickLane) reveal='wrong'; // the wrong pick pops
       }
       const selected=(state==='play'&&lane===liveLane());
       drawCard(gate.x, y, gate.choices[lane], L.theme, selected, reveal);

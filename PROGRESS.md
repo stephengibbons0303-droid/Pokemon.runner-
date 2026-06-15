@@ -92,6 +92,9 @@ _Last updated: 2026-06-14._
 - **Clearer answer feedback** (runner + classic boss): the **correct** card turns
   green, glows, and throws gold sparkles (`cardCheer`); the **wrong** card **pops**
   like a balloon into themed fragments (`cardPop`, `drawCard` skips the popped card).
+  Green now shows **only on a correct answer** (no green on a miss); the pop is
+  punchier and the miss resolves a little quicker. (Wrong is confirmed when the
+  balloon clears Pikachu — the forgiving overlap window — so timing is unchanged.)
 - **Boss retries.** Losing a **duel** boss (energy → 0) no longer ends the run:
   it spends one **heart** and restarts the fight fresh (`bossFail`/`enterBoss(retry)`,
   no cutscene) — you get as many attempts as hearts remaining; game over only at 0
