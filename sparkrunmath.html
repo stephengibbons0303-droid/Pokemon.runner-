@@ -725,6 +725,7 @@ let introReady=false, introBeats=[], introI=0, introState='idle';   // intro cut
 let introWaitT=0, introMax=0, introGapAfter=0, introEnded=true, introCur=null;
 let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
+let ashWarnCD=0;                                     // cooldown so Ash's "be careful!" warning doesn't spam
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
 const BASIC_DMG=10, SPECIAL_DMG=15, SUPER_DMG=30;    // % energy per hit; super = a charged signature move (Pikachu: Thunderbolt; bosses: their heavy)
@@ -843,6 +844,8 @@ const ASH_HEY='ash_hey.mp3', ASH_HUH='ash_battlehuh.mp3', ASH_WANNA='ash_wannaba
 const ASH_SPIRIT='ash_spirit.mp3', ASH_BEST='ash_dobest.mp3', ASH_COUNT='ash_counton.mp3';
 const ASH_CHEER=[ASH_SPIRIT, ASH_BEST];
 function ashSay(file,vol){ voice(file, vol==null?0.95:vol, 'ash'); }   // Ash coaches on his own channel
+// Ash warns "Be careful, Pikachu!" when the foe is winding up a special/heavy
+function ashWarn(){ if(ashWarnCD>0) return; ashWarnCD=4.0; ashSay('ash_careful.mp3',0.98); ashShow('point',1.5); }
 // Ash on the bank: ready (idle), point (coaching), punch (victory)
 const ASH_SPR={ ready:'ash_ready.png', point:'ash_point.png', punch:'ash_punch.png', neutral:'ash_neutral.png' };
 const ASH_X=108, ASH_H=176;
@@ -929,6 +932,7 @@ function foeAttack(heavy){
   boss.atkArc  = Math.random()<0.45 ? 'high' : 'low'; // high = lobbed → roll aside (◀/▶); low = straight → jump (▲)
   boss.atk=0.6; flash={a:heavy?0.55:0.4, col: heavy?'#fff2a0':(special?'#7aa6ff':'#9fd8ff')};
   if(boss.cfg.roar2) voice(boss.cfg.roar2, heavy?0.95:0.7, 'foe');
+  if(special && !heavy) ashWarn();                     // "Be careful, Pikachu!" on incoming specials (heavy warned at its charge)
   const windup=(heavy?1.9:special?1.8:1.2)/boss.power; // heavy gives a touch more reaction time
   dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power;
   bossMsg = heavy ? ('Here comes '+(boss.cfg.heavyName||'its heavy move')+' — DODGE!')
@@ -956,6 +960,7 @@ function startHeavy(){
   boss.charging={t:0,dur:2.0};
   flash={a:0.45,col:'#fff2a0'};
   if(boss.cfg.roar2) voice(boss.cfg.roar2,0.95,'foe');
+  ashWarn();                                           // Ash warns during the heavy's wind-up
   bossMsg=boss.cfg.name+' powers up — '+(boss.cfg.heavyName||'heavy move')+'!'; bossMsgT=2.0;
 }
 // directional dodge: a LOW attack must be JUMPED (▲); a HIGH lobbed attack must be
@@ -999,6 +1004,7 @@ function rileUp(){
 }
 function updateDuel(dt){
   if(castCD>0) castCD-=dt;
+  if(ashWarnCD>0) ashWarnCD-=dt;
   // Ash pose: punch on victory, else revert to ready after a momentary pose
   if(boss.defeated) ashPose='punch';
   else if(ashPoseT>0){ ashPoseT-=dt; if(ashPoseT<=0) ashPose='ready'; }
