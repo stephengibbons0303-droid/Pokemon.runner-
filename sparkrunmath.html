@@ -340,10 +340,10 @@ const MAX_CHARGE = 6;
 // proj = how the move travels to the boss: 'dash' (Pikachu lunges in), 'bolt'
 // (lightning arc), 'orb' (a flying energy ball). dmg-0 buffs need none.
 const PIKA_MOVES = [
-  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', kind:'basic', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge', proj:'dash' },
-  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt', proj:'bolt' },
-  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit', proj:'orb' },
-  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit', proj:'orb' },
+  { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', kind:'basic', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge', proj:'dash', dashProj:'pika_proj_qa.png' },
+  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt', proj:'bolt', projImg:'pika_proj_tb.png' },
+  { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit', proj:'orb', projImg:'pika_proj_eb.png' },
+  { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit', proj:'orb', projImg:'pika_proj_ew.png' },
   { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:2, blurb:'Heavy slam', proj:'dash' },
   { key:'cm', name:'Charm',        file:'pika_charm.png',       dmg:0, cost:0, gain:2, col:'#ff9ed6', unlock:3, blurb:'+2 charge' },
   { key:'rf', name:'Reflect',      file:'pika_reflect.png',     dmg:0, cost:1, gain:0, shield:2, col:'#b9a6ff', unlock:4, blurb:'Blocks 2 hits' },
@@ -352,7 +352,7 @@ const PIKA_MOVES = [
 function availMoves(){ return PIKA_MOVES.filter(m=>m.unlock<=levelIdx); }
 // preload the move-button icons + move art so the duel/boss power buttons are
 // never blank — esp. when jumping straight into a battle via the dev menu
-PIKA_MOVES.forEach(m=>{ if(m.icon) bossSprite(m.icon); if(m.file) bossSprite(m.file); });
+PIKA_MOVES.forEach(m=>{ if(m.icon) bossSprite(m.icon); if(m.file) bossSprite(m.file); if(m.projImg) bossSprite(m.projImg); if(m.dashProj) bossSprite(m.dashProj); });
 function curMove(){ return PIKA_MOVES.find(m=>m.key===equipped) || PIKA_MOVES[1]; }
 function canCast(m){ return charge>=m.cost; }
 function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move learned entering this level
@@ -1171,10 +1171,17 @@ function pikaFire(m){
   pikaAtk={ m, spr:bossSprite(m.file), t:0, dur: seq?0.66:0.62 };
   if(m.dmg>0){
     const aim=bossAimPoint(), proj=m.proj||'bolt';
+    const img = m.projImg ? bossSprite(m.projImg) : null;      // real flying-projectile art (else procedural)
     if(proj==='dash' && bossMode==='duel'){
-      pikaLunge={ t:0, dur:0.5, reach: Math.max(60, aim.x-(PLAYER_X+90)), hit:false };   // lunge in, strike, return
+      pikaLunge={ t:0, dur:0.5, reach: Math.max(60, aim.x-(PLAYER_X+90)), hit:false,
+                  spr: m.dashProj ? bossSprite(m.dashProj) : null };   // the dash sprite IS the lunging Pikachu
+      if(pikaLunge.spr) pikaAtk=null;                          // don't also draw the perform-pose over the dash
+    } else if(img){                                            // fly the real sprite to the boss
+      const straight = (proj==='bolt');                        // beam shoots flat & fast; orbs lob a little
+      shots.push({ sprite:img, t:0, dur: straight?0.2:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y,
+                   col:m.col, r:m.dmg>=3?22:16, arc: straight?6:26, hit:false });
     } else if(proj==='orb'){
-      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, hit:false });
+      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, arc:26, hit:false });
     } else {                                                   // bolt (or dash outside a duel): a quick lightning arc
       zaps.push({ life:0.32, max:0.32, x1:PLAYER_X+40, y1:player.y-6, x2:aim.x, y2:aim.y });
       bossImpact(aim);
@@ -2162,7 +2169,8 @@ function drawDuel(){
     gx.addColorStop(0, sup?'#fffbe0':'#fff7b0'); gx.addColorStop(0.5, sup?'rgba(255,225,74,.7)':'rgba(255,225,74,.5)'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
     g.beginPath(); g.arc(PLAYER_X+pikaDX+shx,py-6,gr,0,7); g.fill(); g.restore(); }
   if(pikaShield>0) drawShield(PLAYER_X+pikaDX, py);
-  if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
+  if(pikaLunge && pikaLunge.spr && pikaLunge.spr.ready) drawPikaDash(PLAYER_X+pikaDX, py);   // Quick Attack: the dash sprite IS the lunge
+  else if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, py)){}    // tumbling roll-dodge
   else drawCreature(PLAYER_X+pikaDX+shx, py, player.mood, true, true);   // crouched, planted (no sway)
   drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
@@ -2360,12 +2368,23 @@ function drawSerpentPlaceholder(tint,hurt){
   g.beginPath(); g.moveTo(84,22); g.quadraticCurveTo(120,50,150,30); g.stroke();
 }
 
-// flying energy orbs (Electro Ball / Electroweb): a glowing core + trail, arcing to the boss
+// Pikachu's attack flying to the boss. Moves with projectile art (Electro Ball,
+// Electroweb, Thunderbolt) fly the real sprite with a glow tail; others draw a
+// procedural glowing orb.
 function drawShots(){
   const now=performance.now();
   shots.forEach(s=>{
-    const p=Math.min(1,s.t/s.dur);
-    const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*26;   // gentle arc
+    const p=Math.min(1,s.t/s.dur), arc=s.arc||26;
+    const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // gentle arc
+    if(s.sprite && s.sprite.ready){                    // --- real projectile sprite (faces right toward the boss) ---
+      const im=spr2d(s.sprite), h=s.r*3.4, w=im.width*(h/im.height);
+      g.save();
+      g.globalAlpha=0.4; g.strokeStyle=s.col; g.lineWidth=6; g.lineCap='round';
+      g.beginPath(); g.moveTo(s.x0+(x-s.x0)*0.5, s.y0+(y-s.y0)*0.5 - Math.sin(p*Math.PI)*arc*0.6); g.lineTo(x,y); g.stroke();
+      g.globalAlpha=1; g.imageSmoothingEnabled=true; g.drawImage(im, x-w/2, y-h/2, w, h);
+      g.restore();
+      return;
+    }
     const r=s.r*(0.85+0.15*Math.sin(now/40));
     g.save();
     // motion trail
@@ -2506,6 +2525,14 @@ function drawPikaAttack(){
   const x=PLAYER_X+pikaDX - w*0.34 + p*26, y=player.y - h*0.55 + off;
   g.save(); g.globalAlpha=Math.min(1,(1-p)*1.7+0.22);
   g.imageSmoothingEnabled=true; g.drawImage(im, x, y, w, h);
+  g.restore();
+}
+// Quick Attack lunge: draw the dashing-Pikachu sprite (faces right) at the lunge
+// position instead of the idle pose, so the dart-in IS the new art.
+function drawPikaDash(x,y){
+  const im=spr2d(pikaLunge.spr), h=156, w=im.width*(h/im.height);
+  g.save(); g.imageSmoothingEnabled=true;
+  g.drawImage(im, x - w*0.40, y - h*0.66, w, h);   // head leads toward the boss; feet near Pikachu's stance
   g.restore();
 }
 function drawShield(x,y){
