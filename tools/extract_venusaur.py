@@ -31,10 +31,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'tools', 'venusaur_sheets')      # committed source 2x2 grids
 # source filename -> (out key, label). venu_seq_<key>.png mirrors the in-game move files.
 SHEETS = [
-    ('sludge_bomb.png', 'sb', 'Sludge Bomb'),
-    ('solar_beam.png',  'sl', 'Solar Beam'),
-    ('earth_power.png', 'ep', 'Earth Power'),
-    ('razor_leaf.png',  'rl', 'Razor Leaf'),
+    ('sludge_bomb.png',  'sb', 'Sludge Bomb'),
+    ('frenzy_plant.png', 'fp', 'Frenzy Plant'),
+    ('earth_power.png',  'ep', 'Earth Power'),
+    ('razor_leaf.png',   'rl', 'Razor Leaf'),
 ]
 
 def sat_val(a):
@@ -78,6 +78,11 @@ def cutout(a, box, whitebg, pad=10):
     seed[0] = seed[-1] = seed[:, 0] = seed[:, -1] = True
     seed &= bglike
     fg = ~ndimage.binary_propagation(seed, mask=bglike)
+    # global white key: when the FX rings the cell (vines to all 4 edges) the edge
+    # flood can't reach the WHITE trapped inside, so also clear near-pure-white
+    # everywhere. Venusaur's art is fully dark-outlined, so it has no large pure-
+    # white interior to eat — only the sheet background reads this clean.
+    fg &= ~(np.abs(crop - whitebg).sum(2) < 30)
     # kill the thin DARK grid-divider lines where they fall inside a crop edge,
     # even where the FX touches them (so they're not edge-reachable by the flood).
     dark = (val < 110) & (sat < 40)                       # grey/black divider pixels
@@ -98,7 +103,17 @@ def cutout(a, box, whitebg, pad=10):
         if min(bw, bh) <= 16 and max(bw, bh) >= 0.45 * max(h, w) and val[comp].mean() < 120 and sat[comp].mean() < 45:
             continue
         keep |= comp
-    fg = ndimage.binary_fill_holes(keep)
+    # Fill only SMALL interior holes (anti-alias gaps inside the body). Big enclosed
+    # regions are the white sheet trapped between vine loops (lacy FX) — leave those
+    # transparent rather than filling them back to white like binary_fill_holes would.
+    filled = ndimage.binary_fill_holes(keep)
+    holes = filled & ~keep
+    hl, hn = ndimage.label(holes)
+    for i in range(1, hn + 1):
+        comp = hl == i
+        if comp.sum() < 0.0015 * h * w:        # tiny gap → fill; large trapped-bg → keep clear
+            keep |= comp
+    fg = keep
     out = np.dstack([crop.astype(np.uint8), (fg * 255).astype(np.uint8)])
     ys, xs = np.where(fg)
     out = out[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
