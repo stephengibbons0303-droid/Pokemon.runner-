@@ -326,6 +326,9 @@ const PIKA_MOVES = [
   { key:'gx', name:'G-Max Volt Crash', file:'pika_gmax.png',    dmg:8, cost:5, gain:0, col:'#ff5a3c', unlock:5, blurb:'ULTIMATE', proj:'bolt' },
 ];
 function availMoves(){ return PIKA_MOVES.filter(m=>m.unlock<=levelIdx); }
+// preload the move-button icons + move art so the duel/boss power buttons are
+// never blank — esp. when jumping straight into a battle via the dev menu
+PIKA_MOVES.forEach(m=>{ if(m.icon) bossSprite(m.icon); if(m.file) bossSprite(m.file); });
 function curMove(){ return PIKA_MOVES.find(m=>m.key===equipped) || PIKA_MOVES[1]; }
 function canCast(m){ return charge>=m.cost; }
 function newMoveAt(lvl){ return PIKA_MOVES.find(m=>m.unlock===lvl); }   // move learned entering this level
@@ -2237,6 +2240,9 @@ function drawMoveBar(){
       const s=Math.min((rad*2-10)/im.width,(rad*2-10)/im.height)*1.06, iw=im.width*s, ih=im.height*s;
       g.imageSmoothingEnabled=true; g.drawImage(im, cx-iw/2, cy-ih/2, iw, ih);
       g.restore();
+    } else {                                              // icon still loading → show the move name so the button is never blank
+      g.fillStyle=m.col; g.font='700 '+Math.round(15*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+      g.fillText(m.name.split(' ')[0], cx, cy-2*k);
     }
     // badge along the bottom: speed/type in a duel, charge cost otherwise
     g.font='700 '+Math.round(13*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
