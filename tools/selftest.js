@@ -157,6 +157,24 @@ check('high answer, double-jump scores', hi && hi.scored);
 const noJump = (function () { for (let i = 0; i < 60; i++) { const r = trial(null); if (r.correct !== 0) return r; } return null; })();
 check('raised-lane answer with no jump misses', noJump && noJump.scored === false);
 
+// exploit guard: overshoot to HIGH (2 taps) on a MID answer, then fall back through
+// mid — must NOT score (you only score the lane you actually chose, not pass-through).
+const overshoot = (function () {
+  for (let i = 0; i < 120; i++) {
+    g.startLevel(0);
+    if (g.gate.correctLane !== 1) continue;                 // need a mid (lane 1) answer
+    let taps = 0; const s0 = g.score;
+    for (let f = 0; f < 800 && g.state === 'play'; f++) {
+      const cardCx = g.gate.x + g.CARD_W / 2;
+      if (taps < 2 && cardCx <= 380) { g.hop(); taps++; }   // double-jump to HIGH early, then arc down through mid
+      g.update(dt);
+    }
+    return { scored: g.score > s0 };
+  }
+  return null;
+})();
+check('overshoot to high then fall through mid does NOT score', overshoot && overshoot.scored === false);
+
 console.log('[4] younger (audio) pack — recognition content + same scoring');
 g.selectPack('abc');
 check('selectPack switches active pack', g.packId === 'abc' && g.PACK.audio === true);

@@ -1357,7 +1357,8 @@ function update(dt){
     // over him, it's a hit — locked instantly (responsive). If the balloon fully passes without
     // ever touching him, it's a miss. cardCx = balloon centre; sprites overlap within ±passHalf.
     const cardCx=gate.x+CARD_W/2, passHalf=CARD_W/2+PIKA_HALF_W;
-    const touched = Math.abs(cardCx-PLAYER_X)<=passHalf && overlapsBalloon(player.y, gate.correctLane);
+    // must have CHOSEN the correct lane (not just be passing through it) AND be at its height
+    const touched = Math.abs(cardCx-PLAYER_X)<=passHalf && player.lane===gate.correctLane && overlapsBalloon(player.y, gate.correctLane);
     if(!gate.locked && (touched || cardCx < PLAYER_X-passHalf)){
       gate.locked=true;
       gate.result=touched;
@@ -1421,7 +1422,7 @@ function update(dt){
     } else if(bossChal){
       bossChal.x -= bossSpeed*dt;
       const cardCx=bossChal.x+CARD_W/2, passHalf=CARD_W/2+PIKA_HALF_W;   // same instant-on-contact scoring as the runner
-      const touched = Math.abs(cardCx-PLAYER_X)<=passHalf && overlapsBalloon(player.y, bossChal.correctLane);
+      const touched = Math.abs(cardCx-PLAYER_X)<=passHalf && player.lane===bossChal.correctLane && overlapsBalloon(player.y, bossChal.correctLane);
       if(!bossChal.locked && (touched || cardCx < PLAYER_X-passHalf)){
         bossChal.locked=true; bossChal.resolveT=0.7; if(player.jumping) player.descending=true;
         bossChal.result=touched;
