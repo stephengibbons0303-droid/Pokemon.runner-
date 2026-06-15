@@ -616,6 +616,7 @@ const PRE_DUR = {
   'ash_pre_maths.mp3':6.6, 'ash_pre_numbers.mp3':3.6, 'ash_pre_letters.mp3':3.4,
   'ash_its_gyarados.mp3':1.5, 'ash_its_lucario.mp3':1.6, 'ash_its_venusaur.mp3':1.5,
   'ash_its_scizor.mp3':1.5,   'ash_its_moltres.mp3':2.0,
+  'pika_cry.mp3':1.5,         // Pikachu's battle cry (classic-boss pre-battle queue)
 };
 const BOSS_VS_CLIP = {                                        // "it's <Boss>!", keyed by boss name
   'Gyarados':'ash_its_gyarados.mp3', 'Lucario':'ash_its_lucario.mp3',
@@ -812,7 +813,8 @@ function enterBoss(){
     introBeats = [pre&&aBeat(pre), vs&&aBeat(vs)].filter(Boolean).concat(introBeats);  // announcer + "it's <Boss>!" lead the intro
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
-    bossIntroQueue = Audio8.isMuted() ? [] : [pre, vs].filter(Boolean);   // play before the questions start (drained in update)
+    // announcer ×2 → Pikachu's cry → opponent's cry (if any) → questions
+    bossIntroQueue = Audio8.isMuted() ? [] : [pre, vs, PIKA_CRY, cfg.roar].filter(Boolean);
   }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
@@ -826,22 +828,15 @@ const ASH_SPR={ ready:'ash_ready.png', point:'ash_point.png', punch:'ash_punch.p
 const ASH_X=108, ASH_H=176;
 let ashPose='ready', ashPoseT=0;
 function ashShow(pose,dur){ ashPose=pose; ashPoseT=dur; }   // momentary pose, reverts after dur
-// scripted pre-fight: three Ash↔Pikachu coaching exchanges (Ash encourages,
-// Pikachu replies each time) → the foe roars and Pikachu answers → "Ready to
-// battle?". Beats are CHAINED: each clip finishes (plus a short gap) before the
-// next plays, so the voices never overlap. No on-screen dialogue box.
+// scripted pre-fight (kept short): the announcer lines ("…has done his X" +
+// "it's <Boss>!") are prepended in enterBoss, then Pikachu's battle cry, then the
+// opponent's → "Ready to battle?". Beats are CHAINED: each clip finishes (plus a
+// short gap) before the next plays, so the voices never overlap.
 function buildIntro(cfg){
-  const ash=[ASH_HEY, ASH_WANNA, ASH_SPIRIT, ASH_BEST, ASH_COUNT].sort(()=>Math.random()-0.5).slice(0,3);
-  const reply=[PIKA_VOICE, PIKA_CRY, PIKA_VOICE];
-  const ashBeat = f => ({ gap:0.25, fn:()=>{ ashShow('point',2.4); return ashSay(f); } });   // returns the audio element
-  const pikaBeat = (f,v) => ({ gap:0.3, fn:()=>voice(f, v==null?0.9:v, 'pika') });
   introBeats=[
-    ashBeat(ash[0]), pikaBeat(reply[0]),            // 1st exchange
-    ashBeat(ash[1]), pikaBeat(reply[1]),            // 2nd exchange
-    ashBeat(ash[2]), pikaBeat(reply[2]),            // 3rd exchange
-    { gap:0.3, fn:()=> cfg.roar ? voice(cfg.roar,0.97,'foe') : null },          // foe roars
-    { gap:0.2, fn:()=>{ ashShow('point',1.4); return voice(PIKA_ANGRY,0.95,'pika'); } },  // Pikachu squares up
-    { gap:0,   fn:()=>{ introReady=true; return null; } },                      // → "Ready to battle?" prompt; tap to start
+    { gap:0.3, fn:()=>{ ashShow('point',1.4); return voice(PIKA_CRY,0.95,'pika'); } },   // Pikachu's battle cry
+    { gap:0.3, fn:()=> cfg.roar ? voice(cfg.roar,0.97,'foe') : null },                    // opponent's cry
+    { gap:0,   fn:()=>{ introReady=true; return null; } },                                // → "Ready to battle?" prompt; tap to start
   ];
   introI=0; introState='idle'; introWaitT=0; introEnded=true; introCur=null; introReady=false;
 }

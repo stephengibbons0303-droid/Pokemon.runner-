@@ -44,8 +44,9 @@ _Last updated: 2026-06-14._
   own `choices` + an `audio` key; `sayGlyph()` plays `say_<x>.mp3` (falls back to
   device speech-synth if a clip is missing) and drives the lip-flap via
   `promptTalking()`.
-- **Pre-battle announcer** — before each boss Ash says "…has done his maths/
-  numbers/letters…" then "it's <Boss>!", then the intro. Pack/content picks the
+- **Pre-battle** (simplified) — announcer "…has done his maths/numbers/letters…"
+  → "it's <Boss>!" → Pikachu's battle cry → the opponent's (duel bosses only) →
+  battle. The old Ash↔Pikachu coaching exchanges were dropped from the intro. Pack/content picks the
   first line (`ash_pre_maths/numbers/letters.mp3` by level `kind`); the second is
   per boss (`BOSS_VS_CLIP` → `ash_its_*.mp3`). Duels prepend both as intro beats;
   classic bosses drain a `bossIntroQueue` (clip-by-clip, `bossHold` per-clip
