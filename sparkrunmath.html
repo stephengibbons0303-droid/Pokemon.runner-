@@ -606,8 +606,14 @@ const NRANGE = (a,b)=>{ const o=[]; for(let i=a;i<=b;i++) o.push(String(i)); ret
 const LETTERS = (a,b)=>{ const o=[]; for(let c=a.charCodeAt(0);c<=b.charCodeAt(0);c++) o.push(String.fromCharCode(c)); return o; };
 // one audio-recognition level: pick a target from `pool`, speak it, show 3 choices
 function recogLevel(name, theme, pool){
-  return { name, theme, count:8, pool,
+  return { name, theme, count:8, pool, kind: /[0-9]/.test(pool[0]) ? 'numbers' : 'letters',
     gen:()=>{ const t=pick(pool); return { q:t, ans:t, choices:pickChoices(t,pool), audio:t }; } };
+}
+// younger game: Ash's pre-battle announcer line, chosen by the level's content
+function preBattleClip(){
+  const L=LEVELS[levelIdx];
+  if(!PACK.audio || !L || !L.kind) return null;
+  return L.kind==='numbers' ? 'ash_pre_numbers.mp3' : 'ash_pre_letters.mp3';
 }
 const ABC_LEVELS = [
   recogLevel('Bloom Meadow',  'balloon', NRANGE(1,10)),       // Gyarados — numbers 1–10
@@ -681,6 +687,7 @@ let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
+let bossHold=0;                                      // younger game: pre-battle announcer hold before the first question
 let shots=[], pikaLunge=null;                         // flying energy orbs + Pikachu's melee lunge
 let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
 let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
@@ -771,6 +778,8 @@ function enterBoss(){
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
+  bossHold=0;
+  const pre = preBattleClip();                                // younger game: "Rai has done his numbers/letters…"
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
@@ -778,8 +787,10 @@ function enterBoss(){
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
     buildIntro(cfg);                                          // kick off the scripted intro (sounds in sequence)
+    if(pre) introBeats.unshift({ gap:0.4, fn:()=>{ ashShow('point',3.6); return voice(pre,1,'ash'); } });  // announcer leads the intro
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
+    if(pre){ voice(pre,1,'ash'); bossHold = Audio8.isMuted()?0:3.6; }   // hold the first question until the announcer finishes
   }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
@@ -1275,14 +1286,16 @@ function update(dt){
     if(boss.hurt>0) boss.hurt-=dt;
     if(boss.atk>0)  boss.atk-=dt;
     if(bossMsgT>0)  bossMsgT-=dt;
+    if(bossHold>0)  bossHold-=dt;                              // younger game: pre-battle announcer hold
     if(bossMode==='duel' && bossPhase==='intro' && !boss.defeated) tickIntro(dt);   // scripted intro audio
+    // classic boss: start the questions once it's entered and the announcer (if any) has finished
+    if(bossMode==='classic' && !boss.defeated && boss.enter<=0 && !bossChal && bossHold<=0) spawnChallenge();
     if(boss.defeated){
       boss.deadT+=dt;
       if(boss.deadT>=1.8) bossDefeated();
     } else if(boss.enter>0){
       boss.enter-=dt;
       if(bossMode==='duel' && boss.cfg.duel!=='dojo') boss.subY=Math.max(0,(boss.enter/1.2))*190;   // lake: rises up out of the water
-      if(boss.enter<=0 && bossMode==='classic') spawnChallenge();   // classic boss: start the math gates
     } else if(bossMode==='duel'){
       updateDuel(dt);                          // lair duel: dialogue then move-vs-dodge
     } else if(bossChal){
