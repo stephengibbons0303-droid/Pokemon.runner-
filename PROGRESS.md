@@ -21,10 +21,24 @@ _Last updated: 2026-06-14._
   and **L2 Lucario** (dojo) are full action duels — scripted intro, energy bars,
   move-vs-dodge, per-boss low-HP mechanic, projectiles that travel to the boss.
 - **L3–L5 bosses** are still the classic scrolling-maths boss (no duels yet).
+- **Achievement gallery ("Spark Friends"):** every Pokémon you defeat joins a
+  gallery, **saved across sessions** (`localStorage`, `caught` set). Opened from a
+  start-screen button (🏆 counter) and shown automatically with the fresh catch
+  highlighted right after a win. Each slot animates via `ACH_ANIM[name]`
+  (drop-in frame strip) or falls back to the static boss sprite + idle bob.
 - **Tooling:** `tools/selftest.js` headless guard + `.githooks/pre-push`;
   `#devjump` start-screen dev menu (`DEV` flag) to jump to any level/boss.
 
 ## Recent work (this session)
+- **Flipped Lucario** to face Pikachu in the dojo duel (per-boss `flip` flag,
+  mirrors idle / hurt / move cut-ins in `drawBossSprite`).
+- **Achievement gallery ("Spark Friends")** — new `dex` screen + state. Defeating
+  a boss adds it to a persisted `caught` set (`bossDefeated`→`catchMon`), then
+  routes through the gallery (`dexReturn` → `levelup`/`won`). Start-screen 🏆
+  button (`dexBtnRect`/`openDex`) browses it any time. Slots drawn by
+  `drawDex`/`drawMonInSlot`; locked Pokémon show a `?` silhouette. **To add a
+  unique animation:** drop a horizontal frame strip and add an `ACH_ANIM[name]`
+  entry (same `cw`/`ch`/`n` convention as the move strips) — no other code change.
 - Extracted **Lucario** move strips (`tools/extract_lucario.py`, sources under
   `tools/lucario_sheets/`) → `luca_seq_*`.
 - Added **Lucario voice clips** (`luca_growl/aura/energy.mp3`).
