@@ -50,6 +50,10 @@ _Last updated: 2026-06-14._
   per boss (`BOSS_VS_CLIP` → `ash_its_*.mp3`). Duels prepend both as intro beats;
   classic bosses drain a `bossIntroQueue` (clip-by-clip, `bossHold` per-clip
   `PRE_DUR`) before the first question. All announcer clips are preloaded.
+- **ABC jump difficulty** (start-screen toggle, saved `abcEasy`, default Easy) —
+  **Easy** hops to the tapped lane and *holds* it (taps cycle ground→mid→high,
+  no timed arc) so the child just aligns and waits; **Tricky** is the timed-jump
+  arc. Easy reuses the existing non-jumping ease path; scoring is unchanged.
 - **Three-stage volume** — the audio button cycles full → low → mute → full
   (`Audio8.cycleVol`/`volMul`), scaling every output.
 - **Voice clips** — Ash's recorded A–Z and 1–20 sliced into 46 `say_*.mp3`

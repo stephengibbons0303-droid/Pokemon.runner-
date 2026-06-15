@@ -20,7 +20,10 @@ The same runner/boss engine drives two content packs:
   **A–Z**, 8 questions per level, same Pokémon bosses. Voice is Ash's recorded
   clips (`say_a.mp3 … say_z.mp3`, `say_1.mp3 … say_20.mp3`), with the device's
   speech-synth as a fallback. Each child keeps their **own** Spark Friends
-  gallery.
+  gallery. A start-screen **jump-difficulty** toggle tailors the controls:
+  **Easy ①** = hop to a lane and *hold* it until the balloon arrives (no timing);
+  **Tricky ②** = the timed-arc jump (same as the maths game). Saved between
+  sessions.
 
 Add per-Pokémon gallery animations or more spoken sets the same drop-in way as
 the rest of the assets (see `ACH_ANIM` and `say_*.mp3` / `tools/slice_speech.py`).
