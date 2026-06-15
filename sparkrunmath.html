@@ -159,10 +159,10 @@ const BOSS_SEQ = {
   'gyara_waterfall.png':  { file:'gyara_seq_wf.png', cw:510, ch:510 },
   'gyara_icefang.png':    { file:'gyara_seq_if.png', cw:445, ch:247 },
   // Lucario move strips (4-frame sequences extracted from the supplied sheets)
-  'luca_aurasphere.png':  { file:'luca_seq_as.png', cw:338, ch:289 },
-  'luca_flashcannon.png': { file:'luca_seq_fc.png', cw:342, ch:289 },
-  'luca_dragonpulse.png': { file:'luca_seq_dp.png', cw:675, ch:362 },
-  'luca_vacuumwave.png':  { file:'luca_seq_vw.png', cw:417, ch:396 },
+  'luca_aurasphere.png':  { file:'luca_seq_as.png', cw:338, ch:305 },
+  'luca_flashcannon.png': { file:'luca_seq_fc.png', cw:342, ch:305 },
+  'luca_dragonpulse.png': { file:'luca_seq_dp.png', cw:333, ch:305 },
+  'luca_vacuumwave.png':  { file:'luca_seq_vw.png', cw:255, ch:305 },
   // Venusaur move strips (4-frame sequences; white-bg sheets via tools/extract_venusaur.py)
   'venu_sludgebomb.png':  { file:'venu_seq_sb.png', cw:561, ch:375 },
   'venu_razorleaf.png':   { file:'venu_seq_rl.png', cw:641, ch:322 },
@@ -209,11 +209,13 @@ const BOSSES = [
       { who:'foe',  txt:'Then strike with everything. Aura knows no mercy.' },
       { who:'pika', txt:'Pika! ⚡ (Let’s go, Ash!)' },
     ],
+    // proj = real projectile art that flies at Pikachu (like Venusaur); flip mirrors
+    // a right-facing sprite so its leading edge points left toward Pikachu.
     moves:[
-      { name:'Aura Sphere',  file:'luca_aurasphere.png',  col:'#62e6b4' },
-      { name:'Flash Cannon', file:'luca_flashcannon.png', col:'#ffe79a' },
-      { name:'Dragon Pulse', file:'luca_dragonpulse.png', col:'#9be86a' },
-      { name:'Vacuum Wave',  file:'luca_vacuumwave.png',  col:'#a8e0ff' },
+      { name:'Aura Sphere',  file:'luca_aurasphere.png',  proj:'luca_proj_as.png', col:'#6fe6e0', flip:true },
+      { name:'Flash Cannon', file:'luca_flashcannon.png', proj:'luca_proj_fc.png', col:'#ffe79a' },
+      { name:'Dragon Pulse', file:'luca_dragonpulse.png', proj:'luca_proj_dp.png', col:'#7fe05a', flip:true },
+      { name:'Vacuum Wave',  file:'luca_vacuumwave.png',  proj:'luca_proj_vw.png', col:'#e2ecf5', flip:true },
     ] },
   { name:'Venusaur',  file:'venusaur.png', tint:'#3f9a4a',
     duel:'grove',                                  // L3 uses the no-math overgrown-grove duel
