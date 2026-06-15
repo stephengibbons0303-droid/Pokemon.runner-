@@ -737,6 +737,7 @@ let lastT=performance.now();
 let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
+let scenePreview=null;                                // dev-menu: show a duel scene before its combat is built
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
 let bossHold=0;                                      // pre-battle announcer hold before the first question
 let bossIntroQueue=[];                               // classic boss: announcer clips to play (in order) before the questions
@@ -810,10 +811,24 @@ function startLevel(i){
 // dev-only: jump straight to a level's play section or its boss fight (see the
 // #devjump start-screen menu). DEV gates whether that menu shows at all.
 const DEV = true;   // ← set false for a release build to hide the dev jump menu
+// the duel scene each level uses (or would use once built) — drives the dev preview
+const DUEL_SCENE_BY_LEVEL = ['lake','dojo','grove','crystal','summit'];
 function devJump(kind, idx){
   Audio8.startMusic();
   resetRun();
   idx = Math.max(0, Math.min(LEVELS.length-1, idx|0));
+  if(kind==='scene'){                                  // static duel-scene preview (no combat) — for art review
+    levelIdx=idx; hearts=3; groundPlayer();
+    const cfg=BOSSES[idx]||BOSSES[BOSSES.length-1];
+    bossMode='duel'; bossPhase='preview'; state='boss';
+    boss={ cfg, hp:100, maxHp:100, hurt:0, bob:0, enter:0, defeated:false, deadT:0, atk:0,
+           subY:0, sideX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
+           evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:0, atkSeq:null, atkN:0, charging:null };
+    scenePreview = DUEL_SCENE_BY_LEVEL[idx] || 'lake';
+    shots=[]; foeShots=[]; pikaLunge=null; pikaDX=0; pikaHP=100; pikaCast=null;
+    for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);
+    return;
+  }
   if(kind==='boss'){ levelIdx=idx; stepInLvl=LEVELS[idx].count; hearts=3; groundPlayer(); enterBoss(); }
   else { startLevel(idx); }
 }
@@ -840,6 +855,7 @@ function enterBoss(retry){
   state='boss'; gate=null; setSpeedMode(false);
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   bossMode = cfg.duel ? 'duel' : 'classic';
+  scenePreview=null;                                  // a real fight never inherits a dev scene preview
   const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, sideX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
@@ -1456,7 +1472,7 @@ function update(dt){
       if(boss.deadT>=1.8) bossDefeated();
     } else if(boss.enter>0){
       boss.enter-=dt;
-      if(bossMode==='duel' && boss.cfg.duel!=='dojo') boss.subY=Math.max(0,(boss.enter/1.2))*190;   // lake: rises up out of the water
+      if(bossMode==='duel' && boss.cfg.duel==='lake') boss.subY=Math.max(0,(boss.enter/1.2))*190;   // lake: rises up out of the water
     } else if(bossMode==='duel'){
       updateDuel(dt);                          // lair duel: dialogue then move-vs-dodge
     } else if(bossChal){
@@ -2079,6 +2095,89 @@ function drawGroveBack(){
   for(let i=0;i<10;i++){ const x=i*104+24; for(let b=-2;b<=2;b++){ g.beginPath(); g.moveTo(x+b*6,FLOOR_Y+8); g.quadraticCurveTo(x+b*9,FLOOR_Y-10,x+b*12,FLOOR_Y-26); g.stroke(); } }
   g.restore();
 }
+/* ----- Scizor crystal-cavern duel scene (no maths) -----
+   A dark cave lit by glowing crystal clusters (teal/violet/magenta) jutting from
+   floor and ceiling, with rock walls framing the sides — continuous with the L4
+   Crystal Caves runner biome. The cyan glow plays off Scizor's red shell. */
+function drawCrystalBack(){
+  g.save();
+  const t=performance.now()*0.001;
+  const sky=g.createLinearGradient(0,0,0,FLOOR_Y);
+  sky.addColorStop(0,'#120a26'); sky.addColorStop(0.5,'#241841'); sky.addColorStop(1,'#34245a');
+  g.fillStyle=sky; g.fillRect(0,0,W,FLOOR_Y);
+  // rough rock walls down each side
+  g.fillStyle='#1b1334';
+  g.beginPath(); g.moveTo(0,0); g.lineTo(150,0); g.lineTo(96,180); g.lineTo(150,320); g.lineTo(70,FLOOR_Y); g.lineTo(0,FLOOR_Y); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(W,0); g.lineTo(W-160,0); g.lineTo(W-104,170); g.lineTo(W-150,300); g.lineTo(W-80,FLOOR_Y); g.lineTo(W,FLOOR_Y); g.closePath(); g.fill();
+  // stalactites hanging from the ceiling
+  g.fillStyle='#241b46';
+  for(let i=0;i<9;i++){ const x=70+i*110, w=18+((i*37)%22), h=42+((i*53)%72);
+    g.beginPath(); g.moveTo(x-w/2,0); g.lineTo(x+w/2,0); g.lineTo(x,h); g.closePath(); g.fill(); }
+  // one glowing faceted crystal shard (+ pulsing halo). up=true grows from the floor.
+  const crystal=(x,base,h,w,body,light,glow,up)=>{
+    const dir=up?-1:1, tip=base+dir*h, midy=base+dir*h*0.5, pulse=0.55+0.45*Math.sin(t*1.8+x*0.05);
+    const gl=g.createRadialGradient(x,midy,2,x,midy,h*1.25);
+    gl.addColorStop(0,glow+(0.55*pulse)+')'); gl.addColorStop(1,glow+'0)');
+    g.fillStyle=gl; g.beginPath(); g.arc(x,midy,h*1.25,0,7); g.fill();
+    g.fillStyle=body; g.beginPath();
+    g.moveTo(x,tip); g.lineTo(x-w/2,base+dir*h*0.30); g.lineTo(x-w/2,base); g.lineTo(x+w/2,base); g.lineTo(x+w/2,base+dir*h*0.30); g.closePath(); g.fill();
+    g.fillStyle=light; g.beginPath();
+    g.moveTo(x,tip); g.lineTo(x-w/2,base+dir*h*0.30); g.lineTo(x-w*0.12,base); g.lineTo(x+w*0.10,base+dir*h*0.22); g.closePath(); g.fill();
+  };
+  const TEAL=['#1f8fae','#7ce6ff','rgba(120,230,255,'], VIOL=['#5a3aa6','#b89cff','rgba(170,140,255,'], MAG=['#a23a86','#ff9ce0','rgba(255,150,225,'];
+  // back/side floor clusters (kept off-centre so the foe reads clearly)
+  crystal(120,FLOOR_Y-6,150,40,...TEAL,true); crystal(176,FLOOR_Y-2,96,28,...VIOL,true); crystal(64,FLOOR_Y-2,104,30,...MAG,true);
+  crystal(W-120,FLOOR_Y-6,160,42,...VIOL,true); crystal(W-58,FLOOR_Y-2,110,30,...TEAL,true); crystal(W-180,FLOOR_Y-2,90,26,...MAG,true);
+  crystal(W*0.46,FLOOR_Y-2,70,22,...TEAL,true);
+  // a couple of ceiling crystals catching the light
+  crystal(300,8,84,26,...VIOL,false); crystal(W-300,8,72,24,...TEAL,false);
+  // cavern floor + faint floating motes
+  g.fillStyle='#231a3c'; g.fillRect(0,FLOOR_Y-4,W,H-FLOOR_Y+4);
+  g.fillStyle='rgba(150,230,255,.10)'; g.fillRect(0,FLOOR_Y,W,3);
+  for(let i=0;i<22;i++){ const x=(i*89+t*14)%W, y=70+((i*47+t*22)% (FLOOR_Y-120));
+    g.globalAlpha=0.18+0.18*Math.sin(t*2+i); g.fillStyle='#aee9ff'; g.fillRect(x,y,2,2); }
+  g.globalAlpha=1; g.restore();
+}
+/* ----- Galarian Moltres twilight-summit duel scene (no maths) -----
+   A night mountaintop: starry dusk sky, a low moon, drifting stormclouds and
+   layered snow-capped peaks, with sinister blue/violet embers rising from the
+   cliff — matching Galarian Moltres's dark flames and the L5 Star Summit biome. */
+function drawSummitBack(){
+  g.save();
+  const t=performance.now()*0.001;
+  const sky=g.createLinearGradient(0,0,0,FLOOR_Y);
+  sky.addColorStop(0,'#0d0922'); sky.addColorStop(0.5,'#2a1747'); sky.addColorStop(0.82,'#5a2a63'); sky.addColorStop(1,'#7a3a5e');
+  g.fillStyle=sky; g.fillRect(0,0,W,FLOOR_Y);
+  // stars (twinkle on the clock)
+  for(let i=0;i<70;i++){ const x=(i*97)%W, y=(i*53)%250;
+    g.globalAlpha=(0.35+0.55*Math.abs(Math.sin(t*1.4+i)))*0.9; g.fillStyle='#e3e9ff'; g.fillRect(x,y,2,2); }
+  g.globalAlpha=1;
+  // low moon + halo
+  const mx=W*0.80, my=118;
+  const mg=g.createRadialGradient(mx,my,6,mx,my,130); mg.addColorStop(0,'rgba(255,236,212,.45)'); mg.addColorStop(1,'rgba(255,236,212,0)');
+  g.fillStyle=mg; g.beginPath(); g.arc(mx,my,130,0,7); g.fill();
+  g.fillStyle='#efe1c6'; g.beginPath(); g.arc(mx,my,44,0,7); g.fill();
+  g.fillStyle='#dccbac'; g.beginPath(); g.arc(mx-14,my-8,8,0,7); g.arc(mx+12,my+10,6,0,7); g.fill();
+  // drifting dark stormclouds near the top
+  for(let i=0;i<4;i++){ const y=46+i*30, off=(((t*(8+i*3))*(i%2?-1:1))%(W+360)+W+360)%(W+360)-180;
+    g.fillStyle='rgba(18,10,34,.55)'; g.beginPath();
+    for(let b=0;b<5;b++){ g.ellipse(off+b*70, y+(b%2?6:0), 56, 22, 0, 0, 7); } g.fill(); }
+  // layered snow-capped peaks (back lighter/hazier, front darker)
+  const peaks=(base,h,col,snow)=>{ g.fillStyle=col; g.beginPath(); g.moveTo(0,FLOOR_Y); g.lineTo(0,base);
+    const caps=[]; for(let x=-60;x<=W+120;x+=150){ const px=x+75, py=base-h*(0.55+0.45*Math.abs(Math.sin(px*0.7)));
+      g.lineTo(x,base); g.lineTo(px,py); caps.push([px,py]); }
+    g.lineTo(W,base); g.lineTo(W,FLOOR_Y); g.closePath(); g.fill();
+    if(snow){ g.fillStyle='rgba(235,240,255,.85)'; for(const [px,py] of caps){
+      g.beginPath(); g.moveTo(px,py); g.lineTo(px-16,py+24); g.lineTo(px-4,py+18); g.lineTo(px+4,py+24); g.lineTo(px+14,py+18); g.lineTo(px+18,py+26); g.closePath(); g.fill(); } } };
+  peaks(372,150,'#3a2a60',true); peaks(420,120,'#2c2050',true); peaks(456,90,'#221940',false);
+  // cliff platform the foe perches on + sinister blue/violet embers rising
+  g.fillStyle='#1c1436'; g.fillRect(0,FLOOR_Y-4,W,H-FLOOR_Y+4);
+  g.fillStyle='rgba(150,120,220,.12)'; g.fillRect(0,FLOOR_Y,W,3);
+  for(let i=0;i<26;i++){ const x=(i*73+t*16)%W, y=FLOOR_Y-((t*46+i*57)%(FLOOR_Y-70));
+    g.globalAlpha=0.55*(0.4+0.6*Math.sin(t*2.4+i)); g.fillStyle=(i%3)?'#7a3aff':'#3a7aff';
+    g.beginPath(); g.arc(x,y,2.4,0,7); g.fill(); }
+  g.globalAlpha=1; g.restore();
+}
 function drawDodgeWave(){
   const dojo = boss.cfg.duel==='dojo', grove = boss.cfg.duel==='grove';
   const p=1-Math.max(0,dodgeWin/dodgeMax);            // wave sweeps from the foe toward Pikachu
@@ -2151,12 +2250,15 @@ function drawDuelBars(){
   drawEnergyBar(W-316, 60, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
 }
 function drawDuel(){
-  if(boss.cfg.duel==='grove'){
-    drawGroveBack();
-    drawBossSprite();       // grove foe stands on the floor (no overlay)
-  } else if(boss.cfg.duel==='dojo'){
-    drawDojoBack();
-    drawBossSprite();       // dojo foe stands on the floor (no water overlay)
+  const sc = boss.cfg.duel || scenePreview;   // scenePreview lets the dev menu show a scene before its duel is built
+  if(sc==='grove'){
+    drawGroveBack(); drawBossSprite();         // grove foe stands on the floor (no overlay)
+  } else if(sc==='dojo'){
+    drawDojoBack(); drawBossSprite();          // dojo foe stands on the floor (no water overlay)
+  } else if(sc==='crystal'){
+    drawCrystalBack(); drawBossSprite();       // Scizor stands among the crystals
+  } else if(sc==='summit'){
+    drawSummitBack(); drawBossSprite();        // Moltres perches on the cliff
   } else {
     drawLairBack();
     drawBossSprite();
@@ -2646,6 +2748,8 @@ if(DEV && devSel){
   for(let i=0;i<LEVELS.length;i++) opt('play:'+i, 'Level '+(i+1)+' — play');
   for(let i=0;i<LEVELS.length;i++){ const b=BOSSES[i]||BOSSES[BOSSES.length-1];
     opt('boss:'+i, 'Level '+(i+1)+' boss — '+(b.name||'?')+(b.duel?' (duel)':'')); }
+  for(let i=0;i<LEVELS.length;i++){ const b=BOSSES[i]||BOSSES[BOSSES.length-1];
+    opt('scene:'+i, 'Scene preview — '+(DUEL_SCENE_BY_LEVEL[i]||'?')+' ('+(b.name||'?')+')'); }
   devSel.addEventListener('change', ()=>{ const v=devSel.value; devSel.value=''; devSel.blur();
     if(!v) return; const ix=v.indexOf(':'); devJump(v.slice(0,ix), +v.slice(ix+1)); });
 }
