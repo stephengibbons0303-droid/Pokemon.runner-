@@ -163,6 +163,11 @@ const BOSS_SEQ = {
   'luca_flashcannon.png': { file:'luca_seq_fc.png', cw:553, ch:335 },
   'luca_dragonpulse.png': { file:'luca_seq_dp.png', cw:675, ch:362 },
   'luca_vacuumwave.png':  { file:'luca_seq_vw.png', cw:417, ch:396 },
+  // Venusaur move strips (4-frame sequences; white-bg sheets via tools/extract_venusaur.py)
+  'venu_sludgebomb.png':  { file:'venu_seq_sb.png', cw:561, ch:375 },
+  'venu_razorleaf.png':   { file:'venu_seq_rl.png', cw:641, ch:322 },
+  'venu_earthpower.png':  { file:'venu_seq_ep.png', cw:566, ch:323 },
+  'venu_frenzyplant.png': { file:'venu_seq_fp.png', cw:632, ch:340 },
 };
 for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
@@ -171,6 +176,7 @@ const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen hei
 const BOSSES = [
   { name:'Gyarados', file:'gyarados.png', tint:'#2f74c0',
     duel:'lake',                                  // L1 uses the no-math lair duel (lake scene)
+    evade:'submerge', lowhp:'heal',               // slips under to dodge; dives to recover at low HP
     roar:'gyara_roar.mp3', cry:'gyara_cry.mp3', roar2:'gyara_roar2.mp3',
     atkSeqs:['gyara_waterfall.png','gyara_icefang.png'],   // specials cycled as attacks
     powerSeq:'gyara_dragondance.png',                      // plays on the dive-recover power-up
@@ -189,6 +195,7 @@ const BOSSES = [
     ] },
   { name:'Lucario',  file:'lucario.png',  hurtFile:'lucario_hurt.png', tint:'#3f6fd0',
     duel:'dojo',                                  // L2 uses the no-math dojo duel
+    evade:'sidestep', lowhp:'enrage',             // sidesteps to dodge; Swords Dance enrage at low HP (no heal)
     flip:true,                                    // his art faces right; mirror it to face Pikachu
     // voice clips: growl=intro/roar, aura=cry/faint, energy=Swords-Dance power-up
     roar:'luca_growl.mp3', cry:'luca_aura.mp3', roar2:'luca_energy.mp3',
@@ -208,11 +215,26 @@ const BOSSES = [
       { name:'Dragon Pulse', file:'luca_dragonpulse.png', col:'#9be86a' },
       { name:'Vacuum Wave',  file:'luca_vacuumwave.png',  col:'#a8e0ff' },
     ] },
-  { name:'Venusaur',  file:'venusaur.png', tint:'#3f9a4a', moves:[
-      { name:'Solar Beam',  file:'venu_solarbeam.png',  col:'#d8f06a' },
-      { name:'Sludge Bomb', file:'venu_sludgebomb.png', col:'#b06ad0' },
-      { name:'Earth Power', file:'venu_earthpower.png', col:'#e0954a' },
-      { name:'Razor Leaf',  file:'venu_razorleaf.png',  col:'#7be05a' },
+  { name:'Venusaur',  file:'venusaur.png', tint:'#3f9a4a',
+    duel:'grove',                                  // L3 uses the no-math overgrown-grove duel
+    flip:true,                                     // his 3/4 art faces right; mirror it to face Pikachu
+    evade:'sidestep', lowhp:'heal',                // dodges like Lucario; recovers (Synthesis) like Gyarados
+    roar:'venu_cry.mp3', cry:'venu_cry.mp3', roar2:'venu_cry.mp3',   // one supplied cry, reused for intro/dodge/power
+    // specials cycled as attacks; the heavy (Frenzy Plant) is charged + telegraphed
+    atkSeqs:['venu_sludgebomb.png','venu_razorleaf.png','venu_earthpower.png'],
+    powerSeq:'venu_razorleaf.png',                 // green flourish on the Synthesis recover
+    heavy:'venu_frenzyplant.png', heavyName:'Frenzy Plant',
+    lines:[
+      { who:'foe',  txt:'This grove is mine to guard. Turn back!' },
+      { who:'pika', txt:'Pika-pi! (We won’t back down!)' },
+    ],
+    // proj = the real projectile sprite that flies at Pikachu (no simulated blob);
+    // spin = tumble it (Razor Leaf swirl); flip = mirror so its head leads the flight.
+    moves:[
+      { name:'Sludge Bomb', file:'venu_sludgebomb.png',  proj:'venu_proj_sb.png', col:'#b06ad0' },
+      { name:'Razor Leaf',  file:'venu_razorleaf.png',   proj:'venu_proj_rl.png', col:'#7be05a', spin:true },
+      { name:'Earth Power', file:'venu_earthpower.png',  proj:'venu_proj_ep.png', col:'#e0954a', flip:true },
+      { name:'Frenzy Plant',file:'venu_frenzyplant.png', proj:'venu_proj_fp.png', col:'#5bbf4a' },
     ] },
   { name:'Scizor',   file:'scizor.png',   tint:'#d04a3a', moves:[
       { name:'X-Scissor',   file:'sciz_xscissor.png',   col:'#8fe05a' },
@@ -820,6 +842,7 @@ function enterBoss(retry){
          evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0, charging:null };   // + special-move / charge state
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; pikaDX=0;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
+  (cfg.moves||[]).forEach(m=>{ if(m.proj) bossSprite(m.proj); });   // preload real projectile art (no pop-in)
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
   bossHold=0; bossIntroQueue=[];
@@ -829,7 +852,7 @@ function enterBoss(retry){
   if(bossMode==='duel'){
     foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
-    boss.subY = (cfg.duel==='dojo') ? 0 : 190;                // lake foe starts submerged & rises; dojo foe just stands
+    boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
     if(retry){                                                // straight back into the fight, no cutscene
@@ -928,11 +951,11 @@ function castMove(m){
 function applyPikaHit(m, dmg){
   const sup = dmg!=null;
   if(!canTarget()){ pikaFire(m); return; }            // he's already under/charging → whiff
-  if(!sup && Math.random()<0.28){                     // dodge: step aside (dojo) or submerge (lake)
-    const dojo=boss.cfg.duel==='dojo';
-    boss.evade={t:0,dur:dojo?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
+  if(!sup && Math.random()<0.28){                     // dodge: step aside (sidestep) or submerge
+    const sidestep=boss.cfg.evade==='sidestep';
+    boss.evade={t:0,dur:sidestep?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
     if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
-    bossMsg=boss.cfg.name+(dojo?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
+    bossMsg=boss.cfg.name+(sidestep?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
   }
   boss.hp=Math.max(0, boss.hp-(dmg!=null?dmg:duelDmg(m))); boss.hurt=0.6;
   pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:sup?0.5:0.32,col:m.col};
@@ -958,18 +981,22 @@ function foeAttack(heavy){
   let file = heavy ? boss.cfg.heavy : (special && (boss.cfg.atkSeqs||[]).length ? boss.cfg.atkSeqs[boss.atkN++ % boss.cfg.atkSeqs.length] : null);
   let mv=null;
   if(file){ const sq=BOSS_SEQ[file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; mv=(boss.cfg.moves||[]).find(m=>m.file===file); }
+  // bosses with real projectile art still throw one on a basic (no cast animation, just the flying sprite)
+  if(!mv){ const pj=(boss.cfg.moves||[]).filter(m=>m.proj); if(pj.length) mv=pick(pj); }
   bossFire(special, mv, heavy);                         // a projectile flies from the boss to Pikachu, arriving as the window closes
 }
-// the boss's attack travels to Pikachu: a water blast (lake) or aura blast (dojo),
-// styled by the move's colour, arriving when the dodge window closes
+// the boss's attack travels to Pikachu. Bosses with projectile art (Venusaur) fly
+// the real sprite; others get a simulated water/aura/leaf blast styled by move colour.
+const DUEL_FIRE_COL = { lake:'#5fb0e6', dojo:'#a8e0ff', grove:'#7be05a' };
 function bossFire(special, mv, heavy){
-  const dojo = boss.cfg.duel==='dojo';
-  const drop = dojo ? DOJO_DROP : (DUEL_DROP + (boss.subY||0));
+  const drop = duelDrop();
   const x0 = BOSS_X + (boss.sideX||0) - 96, y0 = BOSS_Y + drop - 6;       // the boss's mouth/front
   const x1 = PLAYER_X + (pikaDX||0) + 16,  y1 = player.y + DUEL_PIKA_DROP - 14;   // Pikachu
-  const col = (mv && mv.col) || (dojo ? '#a8e0ff' : '#5fb0e6');
+  const col = (mv && mv.col) || DUEL_FIRE_COL[boss.cfg.duel] || '#5fb0e6';
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
-  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind: dojo?'aura':'water', arc, heavy:!!heavy });
+  const kind = boss.cfg.duel==='grove' ? 'leaf' : (boss.cfg.duel==='dojo' ? 'aura' : 'water');
+  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind, arc, heavy:!!heavy,
+    sprite: (mv&&mv.proj) ? bossSprite(mv.proj) : null, spin: !!(mv&&mv.spin), flip: !!(mv&&mv.flip) });
 }
 // start charging the signature heavy move: ~2s glow + shake telegraph, invulnerable while charging
 function startHeavy(){
@@ -1041,12 +1068,12 @@ function updateDuel(dt){
   foeShots=foeShots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; } return true; });
   if(bossPhase!=='battle' || boss.defeated) return;
 
-  // --- quick dodge (evading a Pikachu hit): sidestep in the dojo, submerge at the lake ---
+  // --- quick dodge (evading a Pikachu hit): sidestep (lateral) or submerge (sink) ---
   if(boss.evade){ boss.evade.t+=dt; const k=Math.sin(Math.min(1,boss.evade.t/boss.evade.dur)*Math.PI);
-    if(boss.cfg.duel==='dojo') boss.sideX=k*120*(boss.evadeDir||1); else boss.subY=k*150;
+    if(boss.cfg.evade==='sidestep') boss.sideX=k*120*(boss.evadeDir||1); else boss.subY=k*150;
     if(boss.evade.t>=boss.evade.dur){ boss.evade=null; boss.subY=0; boss.sideX=0; } return; }
 
-  if(boss.cfg.duel==='dojo'){
+  if(boss.cfg.lowhp==='enrage'){
     // --- Swords Dance: a one-time enrage at low energy (powers up, no heal) ---
     if(!boss.enraged && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
       boss.enraged=true; boss.power=1.35;
@@ -1056,31 +1083,35 @@ function updateDuel(dt){
       bossMsg=boss.cfg.name+' raises its aura — Swords Dance!'; bossMsgT=1.8;
       foeTimer=Math.max(foeTimer,1.3);
     }
-  } else {
-    // --- Gyarados dive → replenish → re-emerge stronger (once, when low on energy) ---
+  } else if(boss.cfg.lowhp==='heal'){
+    // --- recover → replenish → re-emerge stronger (once, when low on energy). The lake
+    //     foe submerges to do it; others (grove) recover in place (Synthesis). ---
+    const submerge=boss.cfg.duel==='lake';
     if(boss.diveState==='up' && boss.dives<1 && boss.hp>0 && boss.hp<=boss.maxHp*0.3){
       boss.diveState='diving'; boss.diveT=0; dodgeWin=0;
       if(boss.cfg.cry) voice(boss.cfg.cry,0.7,'foe');
-      bossMsg=boss.cfg.name+' dives to recover!'; bossMsgT=1.6;
+      bossMsg=boss.cfg.name+(submerge?' dives to recover!':' uses Synthesis!'); bossMsgT=1.6;
+      if(!submerge){ flash={a:0.45,col:'#9af0c6'};                      // green Synthesis flash
+        const ps=boss.cfg.powerSeq&&BOSS_SEQ[boss.cfg.powerSeq]; if(ps) boss.atkSeq={seq:ps,t:0,dur:1.2}; }
     }
     if(boss.diveState!=='up'){
       boss.diveT+=dt;
       if(boss.diveState==='diving'){
-        boss.subY=Math.min(170, boss.subY+dt*240);
-        if(boss.subY>=170){ boss.diveState='down'; boss.diveT=0; }
+        if(submerge){ boss.subY=Math.min(170, boss.subY+dt*240); if(boss.subY>=170){ boss.diveState='down'; boss.diveT=0; } }
+        else if(boss.diveT>=0.5){ boss.diveState='down'; boss.diveT=0; }   // grove: brief gather, no sink
       } else if(boss.diveState==='down'){
         if(boss.diveT>=1.8){
           boss.hp=Math.min(boss.maxHp, boss.hp+Math.round(boss.maxHp*0.45));   // replenish a bit
           boss.dives++; boss.power=1.35; boss.diveState='rising'; boss.diveT=0;
           if(boss.cfg.roar2) voice(boss.cfg.roar2,0.9,'foe');
           const ps=boss.cfg.powerSeq&&BOSS_SEQ[boss.cfg.powerSeq]; if(ps) boss.atkSeq={seq:ps,t:0,dur:1.2};   // power-up animation
-          bossMsg=boss.cfg.name+' surges back stronger!'; bossMsgT=1.8;
+          bossMsg=boss.cfg.name+(submerge?' surges back stronger!':' is invigorated!'); bossMsgT=1.8;
         }
       } else if(boss.diveState==='rising'){
-        boss.subY=Math.max(0, boss.subY-dt*210);
-        if(boss.subY<=0){ boss.diveState='up'; foeTimer=1.6; }
+        if(submerge){ boss.subY=Math.max(0, boss.subY-dt*210); if(boss.subY<=0){ boss.diveState='up'; foeTimer=1.6; } }
+        else if(boss.diveT>=0.4){ boss.diveState='up'; foeTimer=1.6; }      // grove: snap back to attacking
       }
-      return;   // no normal attacks while he's submerged
+      return;   // no normal attacks while recovering
     }
   }
 
@@ -1124,9 +1155,7 @@ function spawnChallenge(){
 // the boss's real on-screen body point, so projectiles/bolts actually land on it
 function bossAimPoint(){
   if(bossMode==='duel' && boss){
-    const dojo = boss.cfg.duel==='dojo';
-    const drop = dojo ? DOJO_DROP : (DUEL_DROP + (boss.subY||0));
-    return { x: BOSS_X + (boss.sideX||0) - 30, y: BOSS_Y + drop - 20 };
+    return { x: BOSS_X + (boss.sideX||0) - 30, y: BOSS_Y + duelDrop() - 20 };
   }
   return { x: BOSS_X-60, y: BOSS_Y };
 }
@@ -2007,12 +2036,44 @@ function drawDojoBack(){
   g.strokeStyle='rgba(255,220,160,.10)'; g.beginPath(); g.moveTo(0,wallBot+3); g.lineTo(W,wallBot+3); g.stroke();
   g.restore();
 }
+/* ----- Venusaur overgrown-grove duel scene (no maths) -----
+   A jungle clearing: a deep-green canopy of leaf clumps up top, framing tree
+   trunks, hanging vines and a mossy floor with ferns. Drawn over the meadow
+   backdrop (like the lake/dojo scenes), fully covering it. */
+function drawGroveBack(){
+  g.save();
+  const sky=g.createLinearGradient(0,0,0,FLOOR_Y);
+  sky.addColorStop(0,'#1d3a1e'); sky.addColorStop(0.55,'#2f5a30'); sky.addColorStop(1,'#467f3c');
+  g.fillStyle=sky; g.fillRect(0,0,W,FLOOR_Y);
+  // soft shafts of light slanting from the canopy
+  g.globalAlpha=0.10; g.fillStyle='#eaffd0';
+  for(let i=0;i<5;i++){ const x=80+i*200; g.beginPath(); g.moveTo(x,0); g.lineTo(x+60,0); g.lineTo(x+150,FLOOR_Y); g.lineTo(x+10,FLOOR_Y); g.closePath(); g.fill(); }
+  g.globalAlpha=1;
+  // layered canopy of leaf clumps along the top (back rows darker)
+  const canopy=(yBase,r,col)=>{ g.fillStyle=col; for(let x=-40;x<W+80;x+=r*1.4){ const y=yBase+Math.sin(x*0.05)*10;
+    g.beginPath(); g.arc(x,y,r,0,7); g.arc(x+r*0.8,y+8,r*0.8,0,7); g.arc(x-r*0.7,y+6,r*0.7,0,7); g.fill(); } };
+  canopy(18,54,'#1f4420'); canopy(44,44,'#2c5e2b'); canopy(68,34,'#3c7a38');
+  // tree trunks framing the clearing
+  for(const tx of [72, W-84]){ g.fillStyle='#5a3a22'; g.fillRect(tx-18,86,36,FLOOR_Y-86);
+    g.fillStyle='rgba(0,0,0,.20)'; g.fillRect(tx+4,86,9,FLOOR_Y-86); }
+  // hanging vines with a leaf at each tip
+  g.lineCap='round';
+  for(let i=0;i<8;i++){ const x=70+i*120, len=58+((i*53)%92);
+    g.strokeStyle='#2f6e2c'; g.lineWidth=4; g.beginPath(); g.moveTo(x,66); g.quadraticCurveTo(x+14,66+len*0.6, x+4,66+len); g.stroke();
+    g.fillStyle='#6fae4a'; g.beginPath(); g.ellipse(x+4,66+len,7,12,0.5,0,7); g.fill(); }
+  // mossy ground band + a few ferns
+  g.fillStyle='#3a6b2e'; g.fillRect(0,FLOOR_Y-4,W,H-FLOOR_Y+4);
+  g.fillStyle='rgba(255,255,255,.10)'; g.fillRect(0,FLOOR_Y,W,3);
+  g.strokeStyle='#2c8a3a'; g.lineWidth=3;
+  for(let i=0;i<10;i++){ const x=i*104+24; for(let b=-2;b<=2;b++){ g.beginPath(); g.moveTo(x+b*6,FLOOR_Y+8); g.quadraticCurveTo(x+b*9,FLOOR_Y-10,x+b*12,FLOOR_Y-26); g.stroke(); } }
+  g.restore();
+}
 function drawDodgeWave(){
-  const dojo = boss.cfg.duel==='dojo';
+  const dojo = boss.cfg.duel==='dojo', grove = boss.cfg.duel==='grove';
   const p=1-Math.max(0,dodgeWin/dodgeMax);            // wave sweeps from the foe toward Pikachu
   const x=(BOSS_X-70) + ((PLAYER_X+30)-(BOSS_X-70))*p;
   g.save();
-  g.fillStyle=dojo?'rgba(150,225,255,.72)':'rgba(130,205,255,.75)';   // dojo: an aura shockwave
+  g.fillStyle=grove?'rgba(150,240,160,.74)':dojo?'rgba(150,225,255,.72)':'rgba(130,205,255,.75)';   // grove: a leafy gust
   g.strokeStyle='rgba(255,255,255,.8)'; g.lineWidth=3;
   g.beginPath(); g.moveTo(x+40,FLOOR_Y);
   for(let k=0;k<=8;k++){ const xx=x+40-k*12, yy=FLOOR_Y-18-Math.sin(k*0.9+world*0.05)*14-k*2; g.lineTo(xx,yy); }
@@ -2079,7 +2140,10 @@ function drawDuelBars(){
   drawEnergyBar(W-316, 60, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
 }
 function drawDuel(){
-  if(boss.cfg.duel==='dojo'){
+  if(boss.cfg.duel==='grove'){
+    drawGroveBack();
+    drawBossSprite();       // grove foe stands on the floor (no overlay)
+  } else if(boss.cfg.duel==='dojo'){
     drawDojoBack();
     drawBossSprite();       // dojo foe stands on the floor (no water overlay)
   } else {
@@ -2219,17 +2283,28 @@ function drawBossCutIn(){
 
 const DUEL_DROP=114;            // lower Gyarados so he sits in the lake (lake duel only)
 const DOJO_DROP=100;            // stand the foe on the dojo floor (dojo duel only)
+const GROVE_DROP=100;           // stand Venusaur on the grove floor
+// how far below BOSS_Y the duel foe is drawn, per scene (lake adds its submersion)
+function duelDrop(){
+  const d=boss.cfg.duel;
+  if(d==='lake')  return DUEL_DROP + (boss.subY||0);
+  if(d==='grove') return GROVE_DROP;
+  return DOJO_DROP;             // dojo
+}
 function drawBossSprite(){
-  const dojo = bossMode==='duel' && boss.cfg.duel==='dojo';
   const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises/stands instead of sliding
   const chg = !!boss.charging;
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : (chg ? Math.sin(performance.now()/26)*6 : 0);   // shudders while charging its heavy
-  const drop = (bossMode==='duel') ? (dojo ? DOJO_DROP : DUEL_DROP + (boss.subY||0)) : 0;   // lake: lowered + submersion; dojo: stands
-  const cx=BOSS_X+slide+shake+(boss.sideX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*10;   // dojo sidestep shifts x
-  if(chg){                                            // charging glow: pulsing golden aura
+  const drop = (bossMode==='duel') ? duelDrop() : 0;   // per-scene stand/submersion height
+  const cx=BOSS_X+slide+shake+(boss.sideX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*10;   // sidestep shifts x
+  // Synthesis recover (grove): a pulsing green aura while it heals in place
+  const synth = bossMode==='duel' && boss.cfg.duel==='grove' && boss.diveState!=='up';
+  if(chg || synth){                                   // charging = golden; Synthesis = green
     const pr=0.6+0.4*Math.sin(performance.now()/90), R=BOSS_H*0.62;
     g.save(); const gl=g.createRadialGradient(cx,cy,8,cx,cy,R);
-    gl.addColorStop(0,'rgba(255,242,160,'+(0.5*pr)+')'); gl.addColorStop(1,'rgba(255,242,160,0)');
+    const c0 = synth ? 'rgba(150,240,150,'+(0.5*pr)+')' : 'rgba(255,242,160,'+(0.5*pr)+')';
+    const c1 = synth ? 'rgba(150,240,150,0)' : 'rgba(255,242,160,0)';
+    gl.addColorStop(0,c0); gl.addColorStop(1,c1);
     g.fillStyle=gl; g.beginPath(); g.arc(cx,cy,R,0,7); g.fill(); g.restore();
   }
   let alpha=1, rot=0, sink=0;
@@ -2305,12 +2380,26 @@ function drawShots(){
     g.restore();
   });
 }
-// the boss's attack flying to Pikachu — a chunky water/aura blast with a streaking tail
+// the boss's attack flying to Pikachu. Bosses with projectile art (Venusaur) fly the
+// real sprite with a coloured glow tail; others draw a chunky water/aura blast.
 function drawFoeShots(){
   const now=performance.now();
   foeShots.forEach(s=>{
     const p=Math.min(1,s.t/s.dur), arc=s.arc||34;
     const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // arcs over toward Pikachu
+    if(s.sprite && s.sprite.ready){                    // --- real projectile sprite ---
+      const im=spr2d(s.sprite), h=s.r*3.4, w=im.width*(h/im.height);
+      g.save();
+      // faint coloured trail so it still reads as an incoming attack
+      g.globalAlpha=0.4; g.strokeStyle=s.col; g.lineWidth=7; g.lineCap='round';
+      g.beginPath(); g.moveTo(s.x0+(x-s.x0)*0.45, s.y0+(y-s.y0)*0.45 - Math.sin(p*Math.PI)*arc*0.6); g.lineTo(x,y); g.stroke();
+      g.globalAlpha=1; g.translate(x,y);
+      if(s.spin) g.rotate(s.t*7);                       // Razor Leaf tumbles as it flies
+      else if(s.flip) g.scale(-1,1);                    // mirror so the head leads the flight (Earth Power)
+      g.imageSmoothingEnabled=true; g.drawImage(im, -w/2,-h/2, w,h);
+      g.restore();
+      return;
+    }
     const r=s.r*(0.9+0.12*Math.sin(now/30));
     g.save();
     // streaking tail (longer than Pikachu's, so it reads as an incoming attack)
