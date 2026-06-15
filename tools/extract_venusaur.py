@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""
+Extract Venusaur move animation strips from the supplied 2x2 sequence sheets.
+
+Each source sheet is a 2x2 grid (4 frames) of Venusaur doing a move, on a WHITE
+sheet background with a thin dark divider cross between the cells. This is the
+white-background sibling of tools/extract_lucario.py (dark bg) — same pipeline,
+inverted background handling.
+
+Pipeline (mirrors PROGRESS.md's asset notes):
+  1. Find the 4 sprites as the 4 largest *saturated* blobs (Venusaur's green body
+     + the coloured FX are saturated; the white sheet and the grey/black grid
+     lines are not).
+  2. For each, crop a padded bbox, then edge-flood-fill the WHITE background to
+     transparent (keeps interior light highlights, which the edge flood can't
+     reach). Drop the thin dark grid-line remnants that fall inside a crop edge.
+  3. Keep the largest blob (+ coloured FX touching it), drop label/line specks,
+     then assemble the 4 frames into one uniform horizontal strip (centred on a
+     common anchor + baseline so Venusaur stays put while the FX plays).
+
+Run:  python3 tools/extract_venusaur.py
+Processes whatever sheets are present in tools/venusaur_sheets/, writes cleaned
+strips (venu_seq_*.png) into the repo root, plus a /tmp preview for visual QA.
+"""
+import os
+import numpy as np
+from PIL import Image
+from scipy import ndimage
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(ROOT, 'tools', 'venusaur_sheets')      # committed source 2x2 grids
+# source filename -> (out key, label). venu_seq_<key>.png mirrors the in-game move files.
+SHEETS = [
+    ('sludge_bomb.png', 'sb', 'Sludge Bomb'),
+    ('solar_beam.png',  'sl', 'Solar Beam'),
+    ('earth_power.png', 'ep', 'Earth Power'),
+    ('razor_leaf.png',  'rl', 'Razor Leaf'),
+]
+
+def sat_val(a):
+    mx = a.max(2); mn = a.min(2)
+    return (mx - mn), mx           # saturation (chroma), value
+
+def sprite_blobs(a):
+    """Bounding boxes of the 4 sprites (biggest saturated blobs)."""
+    sat, _ = sat_val(a)
+    m = ndimage.binary_dilation(sat > 55, iterations=14)   # merge body+FX per cell
+    lab, n = ndimage.label(m)
+    sizes = ndimage.sum(np.ones_like(lab), lab, range(1, n + 1))
+    boxes = []
+    for idx in np.argsort(sizes)[::-1]:
+        if sizes[idx] < 0.01 * a.shape[0] * a.shape[1]:
+            break
+        ys, xs = np.where(lab == idx + 1)
+        boxes.append((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
+        if len(boxes) == 4:
+            break
+    return boxes
+
+def find_frames(a):
+    """Sprite blob bboxes in reading order (TL, TR, BL, BR)."""
+    boxes = sprite_blobs(a)
+    boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
+    return sorted(boxes[:2], key=lambda b: b[0]) + sorted(boxes[2:], key=lambda b: b[0])
+
+def cutout(a, box, whitebg, pad=10):
+    """Tight cutout of one sprite: pad the blob bbox, edge-flood-fill the white bg
+    to transparent, drop grid-line / label specks, tighten. Returns (rgba, cx, h)."""
+    x0, y0, x1, y1 = box
+    x0 = max(0, x0 - pad); y0 = max(0, y0 - pad)
+    x1 = min(a.shape[1], x1 + pad); y1 = min(a.shape[0], y1 + pad)
+    crop = a[y0:y1, x0:x1].astype(int)
+    h, w, _ = crop.shape
+    sat, val = sat_val(crop)
+    # background = near the white sheet colour (low saturation, high value)
+    bglike = (np.abs(crop - whitebg).sum(2) < 60) | ((sat < 18) & (val > 232))
+    seed = np.zeros((h, w), bool)
+    seed[0] = seed[-1] = seed[:, 0] = seed[:, -1] = True
+    seed &= bglike
+    fg = ~ndimage.binary_propagation(seed, mask=bglike)
+    # kill the thin DARK grid-divider lines where they fall inside a crop edge,
+    # even where the FX touches them (so they're not edge-reachable by the flood).
+    dark = (val < 110) & (sat < 40)                       # grey/black divider pixels
+    linecol = dark.mean(0)                                # fraction of each column that's line-like
+    linerow = dark.mean(1)
+    edge = np.zeros(w, bool); edge[:max(1, int(w * 0.16))] = True; edge[int(w * 0.84):] = True
+    edgeR = np.zeros(h, bool); edgeR[:max(1, int(h * 0.16))] = True; edgeR[int(h * 0.84):] = True
+    fg[:, edge & (linecol > 0.6)] = False                 # vertical divider at a crop edge
+    fg[edgeR & (linerow > 0.6), :] = False                # horizontal divider at a crop edge
+    lab, n = ndimage.label(fg)
+    keep = np.zeros_like(fg)
+    for i in range(1, n + 1):
+        comp = lab == i
+        ys, xs = np.where(comp)
+        bw = xs.max() - xs.min() + 1; bh = ys.max() - ys.min() + 1
+        if len(ys) < 0.004 * h * w:          continue     # speck
+        # thin, long, dark component = a grid-line remnant
+        if min(bw, bh) <= 16 and max(bw, bh) >= 0.45 * max(h, w) and val[comp].mean() < 120 and sat[comp].mean() < 45:
+            continue
+        keep |= comp
+    fg = ndimage.binary_fill_holes(keep)
+    out = np.dstack([crop.astype(np.uint8), (fg * 255).astype(np.uint8)])
+    ys, xs = np.where(fg)
+    out = out[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    return out, (xs.max() + xs.min()) / 2 - xs.min(), float(ys.max() - ys.min())
+
+def build(frames, target_h=240, padx=26, padtop=20, padbot=14):
+    """Uniform scale across the 4 frames (median height); bottom-align on a common
+    baseline and centre horizontally so Venusaur stays put while the FX plays."""
+    scale = target_h / np.median([h for _, _, h in frames])
+    sized = []
+    for rgba, cx, _ in frames:
+        im = Image.fromarray(rgba, 'RGBA')
+        im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
+        sized.append((im, cx * scale))
+    left = max(cx for _, cx in sized); right = max(im.width - cx for im, cx in sized)
+    top = max(im.height for im, _ in sized)
+    cw = int(left + right) + 2 * padx
+    ch = int(top) + padtop + padbot
+    axc = int(left) + padx                                  # common horizontal anchor
+    baseY = ch - padbot                                     # common baseline (feet)
+    strip = Image.new('RGBA', (cw * 4, ch), (0, 0, 0, 0))
+    for i, (im, cx) in enumerate(sized):
+        strip.alpha_composite(im, (i * cw + axc - int(cx), baseY - im.height))
+    return strip, cw
+
+def main():
+    previews = []
+    for fname, key, label in SHEETS:
+        path = os.path.join(SRC, fname)
+        if not os.path.exists(path):
+            continue                                        # process only the sheets uploaded so far
+        a = np.asarray(Image.open(path).convert('RGB')).astype(int)
+        whitebg = np.median([a[0, 0], a[0, -1], a[-1, 0], a[-1, -1]], axis=0)
+        boxes = find_frames(a)
+        frames = [cutout(a, b, whitebg) for b in boxes]
+        strip, cw = build(frames)
+        outp = os.path.join(ROOT, f'venu_seq_{key}.png')
+        strip.save(outp)
+        print(f'{label:12s} -> venu_seq_{key}.png  {strip.width}x{strip.height} (cell cw={cw}, ch={strip.height})')
+        previews.append((label, strip))
+    if not previews:
+        print('No source sheets found in', SRC); return
+    # contact sheet for visual QA (on magenta so transparency is obvious)
+    W = max(s.width for _, s in previews)
+    H = sum(s.height for _, s in previews) + 20 * len(previews)
+    sheet = Image.new('RGBA', (W, H), (255, 0, 255, 255))
+    y = 0
+    for _, s in previews:
+        sheet.alpha_composite(s, (0, y)); y += s.height + 20
+    sheet.convert('RGB').save('/tmp/venu_preview.png')
+    print('preview -> /tmp/venu_preview.png')
+
+if __name__ == '__main__':
+    main()
