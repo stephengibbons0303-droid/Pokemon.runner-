@@ -1720,20 +1720,19 @@ function drawMenu(){
   g.fillStyle=C.coral; g.fillText('Spark Run',W/2,150);
   g.fillStyle=C.cream; g.font='600 26px Fredoka, sans-serif'; g.fillText('Pick a player',W/2,196);
   // mascot demo
-  drawCreature(W/2,278,'happy');
+  drawCreature(W/2,292,'happy');
   g.restore();
-  // ABC jump-difficulty toggle (applies to the younger game)
-  const dr=diffBtnRect();
-  g.fillStyle='rgba(35,22,53,.7)'; rr(dr.x,dr.y,dr.w,dr.h,17); g.fill();
-  g.strokeStyle=abcEasy?C.mint:C.glow; g.lineWidth=2; rr(dr.x,dr.y,dr.w,dr.h,17); g.stroke();
-  g.textAlign='center'; g.textBaseline='middle';
-  g.fillStyle=C.cream; g.font='600 17px Fredoka, sans-serif';
-  g.fillText('ABC jump:  '+(abcEasy?'Easy ①':'Tricky ②')+'   (tap)', dr.x+dr.w/2, dr.y+dr.h/2+1);
-  g.textBaseline='alphabetic';
   // two games — older (written maths) / younger (audio ABC & 123)
   const pr=playBtnRects();
   drawPlayBtn(pr.maths, C.leaf,    '🔢  Maths',     PACKS.maths.sub);
   drawPlayBtn(pr.abc,   '#b85c3a', '🔡  ABC & 123', PACKS.abc.sub);
+  // ABC jump-difficulty: round button beside the ABC banner (green ① easy → blue ② tricky)
+  const dr=diffBtnRect();
+  g.fillStyle = abcEasy ? C.leaf : '#3f7fd0';
+  g.beginPath(); g.arc(dr.cx,dr.cy,dr.r,0,7); g.fill();
+  g.strokeStyle='rgba(255,255,255,.75)'; g.lineWidth=3; g.beginPath(); g.arc(dr.cx,dr.cy,dr.r,0,7); g.stroke();
+  g.fillStyle='#fff'; g.font='700 30px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText(abcEasy?'1':'2', dr.cx, dr.cy+1); g.textBaseline='alphabetic';
   // achievement gallery button (top-left) with a caught counter
   const db=dexBtnRect();
   g.fillStyle='rgba(35,22,53,.7)'; rr(db.x,db.y,db.w,db.h,12); g.fill();
@@ -1743,7 +1742,8 @@ function drawMenu(){
 }
 function playBtnRects(){ const bw=320, bx=W/2-bw/2, bh=58, gap=12, by=404;
   return { maths:{x:bx,y:by,w:bw,h:bh}, abc:{x:bx,y:by+bh+gap,w:bw,h:bh} }; }
-function diffBtnRect(){ return {x:W/2-150, y:362, w:300, h:34}; }   // ABC jump-difficulty toggle (above the play buttons)
+function diffBtnRect(){ const a=playBtnRects().abc, r=a.h/2, cx=a.x+a.w+14+r, cy=a.y+r;   // round toggle to the right of the ABC button
+  return {x:cx-r, y:a.y, w:a.h, h:a.h, cx, cy, r}; }
 function startRun(){ Audio8.startMusic(); startLevel(0); }
 function drawPlayBtn(r, col, title, sub){
   g.fillStyle=col; rr(r.x,r.y,r.w,r.h,20); g.fill();
