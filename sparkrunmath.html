@@ -923,7 +923,7 @@ function applyPikaHit(m, dmg){
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); }
   bossMsg=(sup?'Pikachu unleashes ':'Pikachu used ')+m.name+'!'; bossMsgT=1.0;
-  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; foeShots=[]; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); }
+  if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; foeShots=[]; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); ashSay('ash_youdidit.mp3',1.0); }
 }
 function foeAttack(heavy){
   const special = heavy || Math.random()<0.4;         // basic = quick/weaker, special = slower/stronger
@@ -1415,7 +1415,7 @@ function update(dt){
           Audio8.sfx('good'); flash={a:0.4,col:m.col}; pikaFire(m); if(PACK.audio) ashYayT=1.0;
           player.mood='happy'; player.moodT=0.7;
           if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
-          if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.2; }
+          if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.2; ashSay('ash_youdidit.mp3',1.0); }
           else bossMsg='Pikachu used '+m.name+'!', bossMsgT=1.2;
           if(!canCast(curMove())) equipped='qa';                  // keep the equipped move castable
         } else if(pikaShield>0){
