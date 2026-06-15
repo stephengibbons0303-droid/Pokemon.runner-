@@ -89,6 +89,12 @@ _Last updated: 2026-06-14._
   supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
 
 ## Recent fixes
+- **Directional duel dodging** — boss attacks are now **low** (straight → JUMP ▲)
+  or **high** (lobbed arc → ROLL ◀/▶); the wrong button (or none) lets the hit
+  land, so hits actually connect. The correct dodge button(s) light up and the
+  prompt shows JUMP!/ROLL!. High shots lob over (`foeShots.arc`). Boss attacks a
+  little more often (`foeTimer` 2.4/3.2s). Per-hit damage is symmetric with
+  Pikachu (10 basic / 15 special); shared `foeHit()`.
 - **Boss attack now reaches Pikachu** — duel bosses fire a travelling blast
   (`bossFire`/`foeShots`, water at the lake / aura in the dojo, tinted by the
   special's colour) from their mouth to Pikachu, arriving as the dodge window
