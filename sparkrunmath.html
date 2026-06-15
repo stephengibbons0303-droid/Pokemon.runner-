@@ -793,7 +793,7 @@ function spawnGate(){
    boss −1 HP. A wrong answer → the boss strikes, −1 heart.
    Empty the HP bar to defeat it. (One boss per level.)
    ============================================================ */
-function enterBoss(){
+function enterBoss(retry){
   state='boss'; gate=null; setSpeedMode(false);
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   bossMode = cfg.duel ? 'duel' : 'classic';
@@ -806,22 +806,36 @@ function enterBoss(){
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
   bossHold=0; bossIntroQueue=[];
-  const pre = preBattleClip();                                // "…has done his maths/numbers/letters…"
-  const vs  = BOSS_VS_CLIP[cfg.name] || null;                 // "it's <Boss>!"
+  const pre = retry ? null : preBattleClip();                // on a retry, skip the announcer/intro and jump back in
+  const vs  = retry ? null : (BOSS_VS_CLIP[cfg.name] || null);
   const aBeat = f => ({ gap:0.35, fn:()=>{ ashShow('point',(PRE_DUR[f]||3.0)); return voice(f,1,'ash'); } });
   if(bossMode==='duel'){
-    bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
+    foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='dojo') ? 0 : 190;                // lake foe starts submerged & rises; dojo foe just stands
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
-    buildIntro(cfg);                                          // kick off the scripted intro (sounds in sequence)
-    introBeats = [pre&&aBeat(pre), vs&&aBeat(vs)].filter(Boolean).concat(introBeats);  // announcer + "it's <Boss>!" lead the intro
+    if(retry){                                                // straight back into the fight, no cutscene
+      bossPhase='battle'; introBeats=[]; introState='done'; introReady=true; introCur=null;
+      boss.enter=0; boss.subY=0;
+      bossMsg='Try again!  ❤️×'+hearts; bossMsgT=2.0; voice(PIKA_CRY,0.9,'pika'); ashShow('point',1.2);
+    } else {
+      bossPhase='intro';
+      buildIntro(cfg);                                        // kick off the scripted intro (sounds in sequence)
+      introBeats = [pre&&aBeat(pre), vs&&aBeat(vs)].filter(Boolean).concat(introBeats);  // announcer + "it's <Boss>!" lead the intro
+    }
   } else {
-    bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
+    bossMsg = retry ? ('Try again!  ❤️×'+hearts) : ('A wild '+cfg.name+' appeared!'); bossMsgT=2.0;
     // announcer ×2 → Pikachu's cry → opponent's cry (if any) → questions
-    bossIntroQueue = Audio8.isMuted() ? [] : [pre, vs, PIKA_CRY, cfg.roar].filter(Boolean);
+    bossIntroQueue = (retry || Audio8.isMuted()) ? [] : [pre, vs, PIKA_CRY, cfg.roar].filter(Boolean);
   }
+}
+// lost the boss fight → spend a heart and retry; out of hearts → game over.
+// (You get as many attempts at the boss as you have hearts left.)
+function bossFail(){
+  hearts=Math.max(0, hearts-1);
+  if(hearts>0){ Audio8.sfx('bad'); enterBoss(true); }
+  else { Audio8.sfx('bad'); setSpeedMode(false); state='over'; }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
 const PIKA_VOICE='pika_voice.mp3', PIKA_THUNDER='pika_thunder.mp3', PIKA_CRY='pika_cry.mp3', PIKA_ANGRY='pika_angry.mp3';
@@ -963,7 +977,7 @@ function foeHit(){
   if(pikaShield>0){ pikaShield--; bossMsg='Blocked! 🛡️'; bossMsgT=1.0; Audio8.sfx('select'); return; }
   pikaHP=Math.max(0, pikaHP-boss.atkDmg); oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad');
   flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9;
-  if(pikaHP<=0){ state='over'; return; }
+  if(pikaHP<=0){ bossFail(); return; }                   // fainted → spend a heart and retry (or game over)
   if(pikaHP<=18 && !boss.riled) rileUp();                // low-energy comeback surge
 }
 // the 3 directional dodge buttons — a permanent row hugging the bottom-LEFT
@@ -1709,10 +1723,13 @@ function drawHUD(){
     if(streak>1){ g.fillStyle=C.glow; g.fillText('🔥 '+streak+' in a row!', 22, 76); }
   }
   g.restore();
-  // hearts — bottom-left normally, top-left in a boss fight; the duel uses energy bars instead
-  if(!(state==='boss' && bossMode==='duel')){
+  // hearts — bottom-left in the runner, top-left in a classic boss, under Pikachu's
+  // energy bar in a duel. In a boss fight these are the retry attempts.
+  {
     g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
-    let hx=22, hy=(state==='boss')?52:H-40; for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
+    const duelB = state==='boss' && bossMode==='duel';
+    let hx=22, hy = duelB?86 : (state==='boss'?52:H-40);
+    for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
   }
 
   // lane hint arrow at the creature's actual height (follows the jump arc)

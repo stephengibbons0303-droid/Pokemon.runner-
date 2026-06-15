@@ -89,6 +89,11 @@ _Last updated: 2026-06-14._
   supplied L3 batch-1/2 lists were dropped so a run never repeats a fact).
 
 ## Recent fixes
+- **Boss retries.** Losing a **duel** boss (energy → 0) no longer ends the run:
+  it spends one **heart** and restarts the fight fresh (`bossFail`/`enterBoss(retry)`,
+  no cutscene) — you get as many attempts as hearts remaining; game over only at 0
+  hearts. Hearts now show in the duel HUD (under Pikachu's bar). Classic maths
+  bosses already spend a heart per wrong answer (continuous attempts), unchanged.
 - **Super moves (30%) for both sides.** Pikachu's **Thunderbolt** is now a charged
   super: ~1.6s wind-up with a glowing/shaking Pikachu, **invulnerable while
   charging**, hits for 30% and isn't evaded. Each boss has a **signature heavy**
