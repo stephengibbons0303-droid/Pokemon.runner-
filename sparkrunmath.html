@@ -609,16 +609,26 @@ function recogLevel(name, theme, pool){
   return { name, theme, count:8, pool, kind: /[0-9]/.test(pool[0]) ? 'numbers' : 'letters',
     gen:()=>{ const t=pick(pool); return { q:t, ans:t, choices:pickChoices(t,pool), audio:t }; } };
 }
-// Ash's pre-battle announcer line, chosen by the pack/level content. Durations are
-// known so classic bosses can hold the first question until the line finishes.
-const PRE_DUR = { 'ash_pre_maths.mp3':6.6, 'ash_pre_numbers.mp3':3.6, 'ash_pre_letters.mp3':3.4 };
+// Ash's pre-battle voice lines. Durations are known so classic bosses can hold the
+// first question until each line finishes. Order per battle: "…has done his X…"
+// then "it's <Boss>!", then the intro.
+const PRE_DUR = {
+  'ash_pre_maths.mp3':6.6, 'ash_pre_numbers.mp3':3.6, 'ash_pre_letters.mp3':3.4,
+  'ash_its_gyarados.mp3':1.5, 'ash_its_lucario.mp3':1.6, 'ash_its_venusaur.mp3':1.5,
+  'ash_its_scizor.mp3':1.5,   'ash_its_moltres.mp3':2.0,
+};
+const BOSS_VS_CLIP = {                                        // "it's <Boss>!", keyed by boss name
+  'Gyarados':'ash_its_gyarados.mp3', 'Lucario':'ash_its_lucario.mp3',
+  'Venusaur':'ash_its_venusaur.mp3', 'Scizor':'ash_its_scizor.mp3',
+  'Galarian Moltres':'ash_its_moltres.mp3',
+};
 function preBattleClip(){
   const L=LEVELS[levelIdx];
   if(PACK.audio) return (L && L.kind==='numbers') ? 'ash_pre_numbers.mp3' : 'ash_pre_letters.mp3';
   return 'ash_pre_maths.mp3';                                 // older maths game
 }
 // preload the announcer clips so their .duration is ready by the time a boss starts
-['ash_pre_maths.mp3','ash_pre_numbers.mp3','ash_pre_letters.mp3'].forEach(f=>{ try{ const a=new Audio(); a.preload='auto'; a.src=f; VOICES[f]=a; }catch(e){} });
+Object.keys(PRE_DUR).forEach(f=>{ try{ const a=new Audio(); a.preload='auto'; a.src=f; VOICES[f]=a; }catch(e){} });
 const ABC_LEVELS = [
   recogLevel('Bloom Meadow',  'balloon', NRANGE(1,10)),       // Gyarados — numbers 1–10
   recogLevel('Orchard Hop',   'apple',   LETTERS('A','M')),   // Lucario  — letters A–M
@@ -691,7 +701,8 @@ let speedMode=false, speedAnnounce=0, speedLines=0;   // hot-streak speed run
 const SPEED_STREAK=5;                                 // correct answers in a row to trigger
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
-let bossHold=0;                                      // younger game: pre-battle announcer hold before the first question
+let bossHold=0;                                      // pre-battle announcer hold before the first question
+let bossIntroQueue=[];                               // classic boss: announcer clips to play (in order) before the questions
 let shots=[], pikaLunge=null;                         // flying energy orbs + Pikachu's melee lunge
 let bossCut=null, moveIdx=0;                          // boss attack-move cut-in panel
 let equipped='tb', pikaAtk=null, pikaShield=0, charge=2;  // selected move + FX + shield blocks + charge meter
@@ -782,8 +793,10 @@ function enterBoss(){
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
-  bossHold=0;
-  const pre = preBattleClip();                                // younger game: "Rai has done his numbers/letters…"
+  bossHold=0; bossIntroQueue=[];
+  const pre = preBattleClip();                                // "…has done his maths/numbers/letters…"
+  const vs  = BOSS_VS_CLIP[cfg.name] || null;                 // "it's <Boss>!"
+  const aBeat = f => ({ gap:0.35, fn:()=>{ ashShow('point',(PRE_DUR[f]||3.0)); return voice(f,1,'ash'); } });
   if(bossMode==='duel'){
     bossPhase='intro'; foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
@@ -791,10 +804,10 @@ function enterBoss(){
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
     for(const k in ASH_SPR) bossSprite(ASH_SPR[k]);            // preload Ash poses
     buildIntro(cfg);                                          // kick off the scripted intro (sounds in sequence)
-    if(pre) introBeats.unshift({ gap:0.4, fn:()=>{ ashShow('point',3.6); return voice(pre,1,'ash'); } });  // announcer leads the intro
+    introBeats = [pre&&aBeat(pre), vs&&aBeat(vs)].filter(Boolean).concat(introBeats);  // announcer + "it's <Boss>!" lead the intro
   } else {
     bossMsg='A wild '+cfg.name+' appeared!'; bossMsgT=2.0;
-    if(pre){ voice(pre,1,'ash'); bossHold = Audio8.isMuted()?0:(PRE_DUR[pre]||3.6); }   // hold the first question until the announcer finishes
+    bossIntroQueue = Audio8.isMuted() ? [] : [pre, vs].filter(Boolean);   // play before the questions start (drained in update)
   }
 }
 /* ---- Gyarados lair duel: no maths, just move-vs-dodge ---- */
@@ -1290,10 +1303,13 @@ function update(dt){
     if(boss.hurt>0) boss.hurt-=dt;
     if(boss.atk>0)  boss.atk-=dt;
     if(bossMsgT>0)  bossMsgT-=dt;
-    if(bossHold>0)  bossHold-=dt;                              // younger game: pre-battle announcer hold
+    if(bossHold>0)  bossHold-=dt;                              // pre-battle announcer hold
     if(bossMode==='duel' && bossPhase==='intro' && !boss.defeated) tickIntro(dt);   // scripted intro audio
-    // classic boss: start the questions once it's entered and the announcer (if any) has finished
-    if(bossMode==='classic' && !boss.defeated && boss.enter<=0 && !bossChal && bossHold<=0) spawnChallenge();
+    // classic boss: play any queued announcer lines in turn, then start the questions
+    if(bossMode==='classic' && !boss.defeated && boss.enter<=0 && !bossChal && bossHold<=0){
+      if(bossIntroQueue.length){ const f=bossIntroQueue.shift(); voice(f,1,'ash'); bossHold=(PRE_DUR[f]||3.0)+0.2; }
+      else spawnChallenge();
+    }
     if(boss.defeated){
       boss.deadT+=dt;
       if(boss.deadT>=1.8) bossDefeated();
