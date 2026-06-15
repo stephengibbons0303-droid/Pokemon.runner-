@@ -620,15 +620,20 @@ function selectPack(id){
 
 /* ---- spoken prompts: play the recorded clip if we have it, else the device voice ---- */
 const SAY_CLIPS = new Set([...'abcdefghijklmnopqrstuvwxyz'.split(''), ...NUMS(20)]);
+let promptAudio=null;          // the currently-playing prompt clip (drives Ash's lip-flap)
+let ashYayT=0;                 // >0 = show Ash's celebration frame in the prompt box
 function sayGlyph(v){
   const key=String(v).toLowerCase();
-  if(SAY_CLIPS.has(key)){ voice('say_'+key+'.mp3', 1, 'prompt'); return; }
+  ashYayT=0;                                                  // a new prompt → back to the talking face
+  if(SAY_CLIPS.has(key)){ promptAudio=voice('say_'+key+'.mp3', 1, 'prompt'); return; }
+  promptAudio=null;
   try{                                                        // fallback: device speech synthesis
     if(typeof speechSynthesis==='undefined' || Audio8.isMuted()) return;
     const u=new SpeechSynthesisUtterance(/^[a-z]$/.test(key)?key.toUpperCase():key);
     u.rate=0.85; u.pitch=1.1; speechSynthesis.cancel(); speechSynthesis.speak(u);
   }catch(e){}
 }
+function promptTalking(){ return !!(promptAudio && !promptAudio.paused && !promptAudio.ended); }
 
 /* ============================================================
    GAME STATE
@@ -1070,7 +1075,7 @@ function hop(){
 const MUTE={x:W-58,y:18,w:40,h:40};
 const PAUSE={x:W-106,y:18,w:40,h:40};                          // pause toggle, left of mute
 function dexBtnRect(){ return {x:18,y:18,w:104,h:40}; }        // start-screen gallery button (top-left)
-const PROMPT={x:W/2-150, y:22, w:300, h:84};                   // top-centre prompt box (text sum, or Ash headshot in the audio pack)
+const PROMPT={x:W/2-97, y:8, w:194, h:140};                   // top-centre prompt box (text sum, or Ash portrait in the audio pack — sized to the art's ~1.39 aspect, clears the high lane)
 const RESUME={x:W/2-150,y:H/2+20,w:300,h:64};                  // big resume button on the pause overlay
 // Size the top-corner pause/mute buttons to the physical-tap floor (capped so
 // they stay tidy in the HUD) and re-anchor them from the top-right each frame.
@@ -1201,6 +1206,7 @@ function update(dt){
   trail=trail.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; return p.life>0; });
   confetti=confetti.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.rot+=p.vr*dt; return p.life>0 && p.y<H+40; });
   if(state==='dex') dexT+=dt;                       // gallery idle/loop animation clock
+  if(ashYayT>0) ashYayT-=dt;                         // younger game: Ash's celebration frame timer
   rings=rings.filter(p=>{ p.life-=dt; p.r+=(p.maxR-p.r)*Math.min(1,dt*7); return p.life>0; });
   stars=stars.filter(p=>{ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.rot+=p.vr*dt; return p.life>0; });
   if(flash.a>0) flash.a=Math.max(0,flash.a-dt*1.6);
@@ -1223,7 +1229,7 @@ function update(dt){
       if(player.jumping) player.descending=true;        // card's passed — drop back to the ground
       if(gate.result){
         score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
-        Audio8.sfx('good'); flash={a:0.42,col:'#c9ffe0'};
+        Audio8.sfx('good'); flash={a:0.42,col:'#c9ffe0'}; if(PACK.audio) ashYayT=1.0;   // Ash cheers in the prompt box
         // satisfying pass-through pop, right where she caught the answer (any lane)
         correctPop(PLAYER_X, player.y);
         for(let i=0;i<18;i++) confetti.push({x:PLAYER_X+10,y:player.y,vx:(Math.random()-0.3)*260,vy:-Math.random()*320-60,life:1.1,r:4+Math.random()*4,rot:Math.random()*6,vr:(Math.random()-0.5)*12,c:pick([C.glow,C.coral,C.mint,C.spark])});
@@ -1280,7 +1286,7 @@ function update(dt){
           let m=curMove(); if(!canCast(m)) m=PIKA_MOVES[0];        // safety fallback to Quick Attack
           charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
           boss.hp-=m.dmg; if(m.dmg>0) boss.hurt=0.6; streak++; score+=20;
-          Audio8.sfx('good'); flash={a:0.4,col:m.col}; pikaFire(m);
+          Audio8.sfx('good'); flash={a:0.4,col:m.col}; pikaFire(m); if(PACK.audio) ashYayT=1.0;
           player.mood='happy'; player.moodT=0.7;
           if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
           if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.2; }
@@ -1540,28 +1546,29 @@ function drawCard(x,y,val,theme,selected,reveal){
 
 function sparkle(r){ g.beginPath(); for(let i=0;i<8;i++){ const a=i*Math.PI/4, rad=(i%2===0)?r:r*0.4; g.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);} g.closePath(); g.fill(); }
 
-/* Younger game: Ash's headshot in the prompt box. He "says" the target letter/
-   number (audio fires on spawn; tapping the box replays it). Prefers a dedicated
-   ash_head.png if supplied, else crops the head from the full Ash sprite. */
+/* Younger game: Ash in the prompt box. He "says" the target letter/number — the
+   clip fires on spawn and his mouth flaps closed↔open while it plays; a correct
+   answer swaps in his celebration frame for a moment. Tap the box to replay. */
+const ASH_PROMPT = { closed:'ash_say0.png', open:'ash_say1.png', yay:'ash_yay.png' };
 function drawAshPrompt(P){
+  const yay = ashYayT>0;
+  const open = promptTalking() && (Math.floor(performance.now()/110)%2===0);   // lip-flap while speaking
+  const spr = bossSprite(yay ? ASH_PROMPT.yay : open ? ASH_PROMPT.open : ASH_PROMPT.closed);
   g.save();
-  rr(P.x,P.y,P.w,P.h,20);
+  rr(P.x,P.y,P.w,P.h,18);
   g.save(); g.clip();                                    // keep the portrait inside the rounded box
-  g.fillStyle='rgba(35,22,53,.92)'; g.fillRect(P.x,P.y,P.w,P.h);
-  const head=bossSprite('ash_head.png'), full=bossSprite('ash_point.png');
-  if(head&&head.ready){                                  // dedicated headshot → cover the left square
-    const im=spr2d(head), sz=P.h, s=Math.max(sz/im.width,sz/im.height), w=im.width*s, h=im.height*s;
-    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+sz/2-w/2, P.y+sz/2-h/2, w, h);
-  } else if(full&&full.ready){                           // crop the head from the full body sprite
-    const im=spr2d(full), h=P.h*4.4, w=im.width*(h/im.height);
-    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+P.h*0.5-w/2, P.y-h*0.05, w, h);
+  g.fillStyle='#f7c5d4'; g.fillRect(P.x,P.y,P.w,P.h);    // matches the art's pink so any load gap blends in
+  if(spr&&spr.ready){                                    // cover-fit the portrait
+    const im=spr2d(spr), s=Math.max(P.w/im.width,P.h/im.height), w=im.width*s, h=im.height*s;
+    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+P.w/2-w/2, P.y+P.h/2-h/2, w, h);
   }
   g.restore();                                           // end clip
-  g.strokeStyle=C.glow; g.lineWidth=3; rr(P.x,P.y,P.w,P.h,20); g.stroke();
-  g.textAlign='center'; g.textBaseline='middle';
-  g.fillStyle=C.glow; g.font='700 34px Fredoka, sans-serif'; g.fillText('🔊', P.x+P.w*0.56, P.y+P.h/2-9);
-  g.fillStyle=C.cream; g.font='600 16px Fredoka, sans-serif'; g.fillText('tap to hear', P.x+P.w*0.7, P.y+P.h/2+20);
-  g.textAlign='left'; g.textBaseline='alphabetic';
+  g.strokeStyle = yay?C.mint:C.glow; g.lineWidth=4; rr(P.x,P.y,P.w,P.h,18); g.stroke();
+  // speaker badge (corner) — the whole box is tap-to-replay
+  const bx=P.x+P.w-22, by=P.y+P.h-22;
+  g.fillStyle='rgba(35,22,53,.8)'; g.beginPath(); g.arc(bx,by,16,0,7); g.fill();
+  g.fillStyle=C.cream; g.font='600 18px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText('🔊', bx, by+1); g.textAlign='left'; g.textBaseline='alphabetic';
   g.restore();
 }
 function drawParticles(){
