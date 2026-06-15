@@ -45,7 +45,10 @@ def sat_val(a):
     return (mx - mn), mx           # saturation (chroma), value
 
 def sprite_blobs(a):
-    """Bounding boxes of the 4 sprites (biggest saturated blobs)."""
+    """Bounding boxes of the 4 sprites (biggest *saturated* blobs). Saturation cleanly
+    separates the 4 cells (the white sheet + dark grid lines aren't saturated, and the
+    bright FX won't bridge across a divider). It does stop at the blue legs though, so
+    the boxes are grown down in find_frames to recover the dark feet."""
     sat, _ = sat_val(a)
     m = ndimage.binary_dilation(sat > 55, iterations=14)   # merge body+FX per cell
     lab, n = ndimage.label(m)
@@ -60,11 +63,21 @@ def sprite_blobs(a):
             break
     return boxes
 
+FEET_PAD = 95          # grow each box down this far to recover Lucario's dark feet/paws
+
 def find_frames(a):
-    """Sprite blob bboxes in reading order (TL, TR, BL, BR)."""
+    """Sprite blob bboxes in reading order (TL, TR, BL, BR), each grown DOWNWARD to
+    include the dark feet — clamped within the cell's own quadrant so the growth never
+    crosses the grid divider into the cell below."""
+    H, W = a.shape[:2]
     boxes = sprite_blobs(a)
     boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
-    return sorted(boxes[:2], key=lambda b: b[0]) + sorted(boxes[2:], key=lambda b: b[0])
+    ordered = sorted(boxes[:2], key=lambda b: b[0]) + sorted(boxes[2:], key=lambda b: b[0])
+    grown = []
+    for x0, y0, x1, y1 in ordered:
+        qbot = (H // 2) if (y0 + y1) / 2 < H / 2 else H    # bottom of this box's quadrant
+        grown.append((x0, y0, x1, min(qbot - 8, y1 + FEET_PAD)))   # reach for the paws, stay above the divider
+    return grown
 
 def cutout(a, box, pad=10):
     """Tight cutout of one sprite: pad the blob bbox, edge-flood-fill the white bg
