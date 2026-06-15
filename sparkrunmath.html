@@ -168,6 +168,11 @@ const BOSS_SEQ = {
   'venu_razorleaf.png':   { file:'venu_seq_rl.png', cw:641, ch:322 },
   'venu_earthpower.png':  { file:'venu_seq_ep.png', cw:566, ch:323 },
   'venu_frenzyplant.png': { file:'venu_seq_fp.png', cw:632, ch:340 },
+  // Scizor move strips (white-bg sheets via tools/extract_scizor.py; shared cell ch=348)
+  'sciz_xscissor.png':   { file:'sciz_seq_xs.png', cw:521, ch:348 },
+  'sciz_swordsdance.png':{ file:'sciz_seq_sd.png', cw:408, ch:348 },
+  'sciz_bulletpunch.png':{ file:'sciz_seq_bp.png', cw:572, ch:348 },
+  'sciz_airslash.png':   { file:'sciz_seq_as.png', cw:312, ch:348 },
 };
 for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
