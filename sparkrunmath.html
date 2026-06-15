@@ -591,6 +591,7 @@ function pickChoices(ans, pool){
   return out;
 }
 const NUMS = n=>Array.from({length:n},(_,i)=>String(i+1));            // ['1'..'n']
+const NRANGE = (a,b)=>{ const o=[]; for(let i=a;i<=b;i++) o.push(String(i)); return o; };   // ['a'..'b']
 const LETTERS = (a,b)=>{ const o=[]; for(let c=a.charCodeAt(0);c<=b.charCodeAt(0);c++) o.push(String.fromCharCode(c)); return o; };
 // one audio-recognition level: pick a target from `pool`, speak it, show 3 choices
 function recogLevel(name, theme, pool){
@@ -598,11 +599,11 @@ function recogLevel(name, theme, pool){
     gen:()=>{ const t=pick(pool); return { q:t, ans:t, choices:pickChoices(t,pool), audio:t }; } };
 }
 const ABC_LEVELS = [
-  recogLevel('Bloom Meadow',  'balloon', NUMS(5)),            // 1–5
-  recogLevel('Orchard Hop',   'apple',   NUMS(10)),           // 1–10
-  recogLevel('Bubble Bay',    'bubble',  NUMS(20)),           // 1–20
-  recogLevel('Crystal Caves', 'crystal', LETTERS('A','M')),   // A–M
-  recogLevel('Star Summit',   'crystal', LETTERS('A','Z')),   // A–Z
+  recogLevel('Bloom Meadow',  'balloon', NRANGE(1,10)),       // Gyarados — numbers 1–10
+  recogLevel('Orchard Hop',   'apple',   LETTERS('A','M')),   // Lucario  — letters A–M
+  recogLevel('Bubble Bay',    'bubble',  LETTERS('N','Z')),   // Venusaur — letters N–Z
+  recogLevel('Crystal Caves', 'crystal', NRANGE(11,20)),      // Scizor   — numbers 11–20
+  recogLevel('Star Summit',   'crystal', LETTERS('A','Z')),   // Moltres  — letters A–Z
 ];
 
 const PACKS = {
