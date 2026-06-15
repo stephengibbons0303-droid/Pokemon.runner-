@@ -1547,27 +1547,24 @@ function drawCard(x,y,val,theme,selected,reveal){
 function sparkle(r){ g.beginPath(); for(let i=0;i<8;i++){ const a=i*Math.PI/4, rad=(i%2===0)?r:r*0.4; g.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);} g.closePath(); g.fill(); }
 
 /* Younger game: Ash in the prompt box. He "says" the target letter/number — the
-   clip fires on spawn and his mouth flaps closed↔open while it plays; a correct
-   answer swaps in his celebration frame for a moment. Tap the box to replay. */
+   clip fires on spawn; his mouth opens (once) for the whole clip then closes, and
+   a correct answer swaps in his celebration frame for a moment. Transparent art,
+   so he floats over the scene. Tap the box to replay. */
 const ASH_PROMPT = { closed:'ash_say0.png', open:'ash_say1.png', yay:'ash_yay.png' };
 function drawAshPrompt(P){
   const yay = ashYayT>0;
-  const open = promptTalking() && (Math.floor(performance.now()/110)%2===0);   // lip-flap while speaking
-  const spr = bossSprite(yay ? ASH_PROMPT.yay : open ? ASH_PROMPT.open : ASH_PROMPT.closed);
+  const spr = bossSprite(yay ? ASH_PROMPT.yay : promptTalking() ? ASH_PROMPT.open : ASH_PROMPT.closed);
   g.save();
-  rr(P.x,P.y,P.w,P.h,18);
-  g.save(); g.clip();                                    // keep the portrait inside the rounded box
-  g.fillStyle='#f7c5d4'; g.fillRect(P.x,P.y,P.w,P.h);    // matches the art's pink so any load gap blends in
-  if(spr&&spr.ready){                                    // cover-fit the portrait
-    const im=spr2d(spr), s=Math.max(P.w/im.width,P.h/im.height), w=im.width*s, h=im.height*s;
-    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+P.w/2-w/2, P.y+P.h/2-h/2, w, h);
+  if(spr&&spr.ready){                                    // contain-fit so nothing is cropped
+    const im=spr2d(spr), s=Math.min(P.w/im.width,P.h/im.height), w=im.width*s, h=im.height*s;
+    g.shadowColor='rgba(0,0,0,.35)'; g.shadowBlur=10; g.shadowOffsetY=3;
+    g.imageSmoothingEnabled=true; g.drawImage(im, P.x+P.w/2-w/2, P.y+(P.h-h)/2, w, h);
+    g.shadowColor='transparent'; g.shadowBlur=0; g.shadowOffsetY=0;
   }
-  g.restore();                                           // end clip
-  g.strokeStyle = yay?C.mint:C.glow; g.lineWidth=4; rr(P.x,P.y,P.w,P.h,18); g.stroke();
   // speaker badge (corner) — the whole box is tap-to-replay
-  const bx=P.x+P.w-22, by=P.y+P.h-22;
-  g.fillStyle='rgba(35,22,53,.8)'; g.beginPath(); g.arc(bx,by,16,0,7); g.fill();
-  g.fillStyle=C.cream; g.font='600 18px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  const bx=P.x+P.w-14, by=P.y+P.h-16;
+  g.fillStyle='rgba(35,22,53,.8)'; g.beginPath(); g.arc(bx,by,15,0,7); g.fill();
+  g.fillStyle=C.cream; g.font='600 17px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
   g.fillText('🔊', bx, by+1); g.textAlign='left'; g.textBaseline='alphabetic';
   g.restore();
 }

@@ -37,9 +37,9 @@ _Last updated: 2026-06-14._
   (`sparkrun.caught.v1.<pack>`).
 - **Younger "ABC & 123" game** — Ash *speaks* a letter/number and the child jumps
   to the matching balloon. In the prompt box (top centre, where the sum sits) Ash's
-  portrait **lip-flaps closed↔open while the clip plays** (`ash_say0/1.png`) and
-  swaps to a **celebration frame on a correct answer** (`ash_yay.png`); tap the box
-  to replay. Levels: 1–10 / A–M / N–Z / 11–20 / A–Z, 8 questions each, same
+  portrait (transparent cut-out, floats over the scene) **opens his mouth once for
+  the spoken clip** (`ash_say0` closed → `ash_say1` open → closed) and swaps to a
+  **celebration frame on a correct answer** (`ash_yay.png`); tap the box to replay. Levels: 1–10 / A–M / N–Z / 11–20 / A–Z, 8 questions each, same
   Pokémon bosses. `recogLevel`/`pickChoices` build the content; gens return their
   own `choices` + an `audio` key; `sayGlyph()` plays `say_<x>.mp3` (falls back to
   device speech-synth if a clip is missing) and drives the lip-flap via
