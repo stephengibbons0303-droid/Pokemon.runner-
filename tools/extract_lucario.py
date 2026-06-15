@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 """
-Extract Lucario move animation strips from the supplied 2x2 sequence sheets.
+Extract Lucario move animation strips from the REDONE 2x2 sequence sheets.
 
-Each source sheet is a 2x2 grid (title bar + per-cell labels) of Lucario doing a
-move across 4 frames, on a dark sheet background with lighter interior panels.
+The original Lucario sheets were dark-background and at inconsistent resolutions
+between moves, which made the in-game strips render at mismatched sizes. The
+redone sheets are WHITE-background (a thin black grid cross between the 4 cells),
+matching the Venusaur sheets — so this now uses the white-bg pipeline (the dark-
+bg version is retired; the old sheets remain in tools/lucario_sheets for ref).
 
-Pipeline (mirrors the Gyarados one documented in PROGRESS.md):
+Pipeline (mirrors tools/extract_venusaur.py):
   1. Find the 4 sprites as the 4 largest *saturated* blobs (Lucario's blue/yellow
-     body is saturated; panels, dividers and grey/white text are not).
-  2. For each, crop a padded bbox, then edge-flood-fill the background to
-     transparent (keeps interior black outlines, which aren't reachable from the
-     edge). Background = near the dark sheet bg OR near the grey panel colour.
-  3. Keep the largest blob (+ anything bright/coloured touching it) to drop stray
-     label specks, then assemble the 4 frames into one uniform horizontal strip.
+     body + the blue aura FX are saturated; the white sheet and black grid lines
+     are not).
+  2. For each, crop a padded bbox, edge-flood-fill the WHITE background to
+     transparent (+ a global pure-white key), and drop thin black grid-line
+     remnants that fall at a crop edge.
+  3. Assemble the 4 frames into one uniform horizontal strip — uniform scale
+     (median sprite height) + a common baseline/anchor so Lucario stays put while
+     the FX plays.
+
+Processes whatever sheets are present in tools/lucario_redo/, writes cleaned
+strips (luca_seq_*.png) into the repo root, plus a /tmp preview for visual QA.
 
 Run:  python3 tools/extract_lucario.py
-Outputs cleaned strips (luca_seq_*.png) into the repo root, plus a preview.
 """
 import os
 import numpy as np
@@ -23,12 +30,14 @@ from PIL import Image
 from scipy import ndimage
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, 'tools', 'lucario_sheets')      # committed source 2x2 grids
+SRC = os.path.join(ROOT, 'tools', 'lucario_redo')         # redone white-bg 2x2 grids
+WHITE = np.array([255, 255, 255])                          # sheets have black borders, so key on pure white (not corners)
+# source filename -> (out key, label). luca_seq_<key>.png mirrors the in-game move files.
 SHEETS = [
-    ('as', 'Aura Sphere',  f'{SRC}/aura_sphere.png'),
-    ('fc', 'Flash Cannon', f'{SRC}/flash_cannon.png'),
-    ('dp', 'Dragon Pulse', f'{SRC}/dragon_pulse.png'),
-    ('vw', 'Vacuum Wave',  f'{SRC}/vacuum_wave.png'),
+    ('aura_sphere.png',  'as', 'Aura Sphere'),
+    ('flash_cannon.png', 'fc', 'Flash Cannon'),
+    ('dragon_pulse.png', 'dp', 'Dragon Pulse'),
+    ('vacuum_wave.png',  'vw', 'Vacuum Wave'),
 ]
 
 def sat_val(a):
@@ -57,32 +66,30 @@ def find_frames(a):
     boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
     return sorted(boxes[:2], key=lambda b: b[0]) + sorted(boxes[2:], key=lambda b: b[0])
 
-def cutout(a, box, darkbg, pad=10):
-    """Tight cutout of one sprite: pad the blob bbox, edge-flood-fill the bg to
-    transparent, drop label/divider specks, tighten. Returns (rgba, cx, baseline)."""
+def cutout(a, box, pad=10):
+    """Tight cutout of one sprite: pad the blob bbox, edge-flood-fill the white bg
+    to transparent, drop grid-line / label specks, tighten. Returns (rgba, cx, h)."""
     x0, y0, x1, y1 = box
     x0 = max(0, x0 - pad); y0 = max(0, y0 - pad)
     x1 = min(a.shape[1], x1 + pad); y1 = min(a.shape[0], y1 + pad)
     crop = a[y0:y1, x0:x1].astype(int)
     h, w, _ = crop.shape
     sat, val = sat_val(crop)
-    ring = np.concatenate([crop[0], crop[-1], crop[:, 0], crop[:, -1]])
-    rsat = ring.max(1) - ring.min(1)
-    panel = np.median(ring[rsat < 25], axis=0) if (rsat < 25).any() else darkbg
-    bglike = (np.abs(crop - darkbg).sum(2) < 64) | ((np.abs(crop - panel).sum(2) < 64) & (sat < 28))
+    bglike = (np.abs(crop - WHITE).sum(2) < 60) | ((sat < 18) & (val > 232))
     seed = np.zeros((h, w), bool)
     seed[0] = seed[-1] = seed[:, 0] = seed[:, -1] = True
     seed &= bglike
     fg = ~ndimage.binary_propagation(seed, mask=bglike)
-    # kill straight frame-border lines near the crop edges (dark OR grey panel),
-    # even where the FX touches them so they're not edge-reachable by the flood-fill
-    near_dark = np.abs(crop - darkbg).sum(2) < 70
-    near_panel = (np.abs(crop - panel).sum(2) < 70) & (sat < 30)
-    linecol = (near_dark | near_panel).mean(0)            # fraction of each column that's bg-like
-    linerow = near_dark.mean(1)
+    fg &= ~(np.abs(crop - WHITE).sum(2) < 30)             # global pure-white key (FX-ringed cells)
+    # kill the thin DARK grid-divider lines where they fall inside a crop edge,
+    # even where FX touches them (so they're not edge-reachable by the flood).
+    dark = (val < 110) & (sat < 40)
+    linecol = dark.mean(0)
+    linerow = dark.mean(1)
     edge = np.zeros(w, bool); edge[:max(1, int(w * 0.16))] = True; edge[int(w * 0.84):] = True
-    fg[:, edge & (linecol > 0.6)] = False                 # vertical border at a crop edge
-    fg[linerow > 0.85, :] = False                          # horizontal border
+    edgeR = np.zeros(h, bool); edgeR[:max(1, int(h * 0.16))] = True; edgeR[int(h * 0.84):] = True
+    fg[:, edge & (linecol > 0.6)] = False
+    fg[edgeR & (linerow > 0.6), :] = False
     lab, n = ndimage.label(fg)
     keep = np.zeros_like(fg)
     for i in range(1, n + 1):
@@ -90,11 +97,18 @@ def cutout(a, box, darkbg, pad=10):
         ys, xs = np.where(comp)
         bw = xs.max() - xs.min() + 1; bh = ys.max() - ys.min() + 1
         if len(ys) < 0.004 * h * w:          continue     # speck
-        # dark, thin, tall component spanning most of the height = a frame-border remnant
-        if bw <= 18 and bh >= 0.45 * h and bh / bw >= 4 and val[comp].mean() < 105:
-            continue
+        if min(bw, bh) <= 16 and max(bw, bh) >= 0.45 * max(h, w) and val[comp].mean() < 120 and sat[comp].mean() < 45:
+            continue                                       # thin, long, dark = grid-line remnant
         keep |= comp
-    fg = ndimage.binary_fill_holes(keep)
+    # fill only SMALL interior holes (anti-alias gaps); leave large trapped-white clear
+    filled = ndimage.binary_fill_holes(keep)
+    holes = filled & ~keep
+    hl, hn = ndimage.label(holes)
+    for i in range(1, hn + 1):
+        comp = hl == i
+        if comp.sum() < 0.0015 * h * w:
+            keep |= comp
+    fg = keep
     out = np.dstack([crop.astype(np.uint8), (fg * 255).astype(np.uint8)])
     ys, xs = np.where(fg)
     out = out[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
@@ -122,17 +136,20 @@ def build(frames, target_h=240, padx=26, padtop=20, padbot=14):
 
 def main():
     previews = []
-    for key, label, path in SHEETS:
+    for fname, key, label in SHEETS:
+        path = os.path.join(SRC, fname)
+        if not os.path.exists(path):
+            continue                                        # process only the redone sheets uploaded so far
         a = np.asarray(Image.open(path).convert('RGB')).astype(int)
-        darkbg = np.median([a[0, 0], a[0, -1], a[-1, 0], a[-1, -1]], axis=0)
         boxes = find_frames(a)
-        frames = [cutout(a, b, darkbg) for b in boxes]
+        frames = [cutout(a, b) for b in boxes]
         strip, cw = build(frames)
         outp = os.path.join(ROOT, f'luca_seq_{key}.png')
         strip.save(outp)
-        print(f'{label:14s} -> luca_seq_{key}.png  {strip.width}x{strip.height} (cell {cw})')
+        print(f'{label:13s} -> luca_seq_{key}.png  {strip.width}x{strip.height}  (BOSS_SEQ: cw={cw}, ch={strip.height})')
         previews.append((label, strip))
-    # contact sheet for visual QA (on magenta so transparency is obvious)
+    if not previews:
+        print('No redone sheets found in', SRC); return
     W = max(s.width for _, s in previews)
     H = sum(s.height for _, s in previews) + 20 * len(previews)
     sheet = Image.new('RGBA', (W, H), (255, 0, 255, 255))
