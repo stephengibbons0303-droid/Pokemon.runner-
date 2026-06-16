@@ -27,6 +27,7 @@ SHEETS = [
     ('dark_pulse.png',  'dp', 'Dark Pulse'),
     ('hurricane.png',   'hr', 'Hurricane'),
 ]
+WHITE_FX = {'air_slash.png', 'hurricane.png'}   # these sheets' white IS the FX (wind/cloud) → keep it; others strip trapped sheet-white
 TARGET_BODY = 240
 PADX, PADTOP, PADBOT = 26, 22, 14
 FEET_PAD = 95          # grow each box down this far to recover the dark feet
@@ -44,7 +45,7 @@ def find_frames(a):
     return [(o, o, mx - c, my - c), (mx + c, o, W - o, my - c),
             (o, my + c, mx - c, H - o), (mx + c, my + c, W - o, H - o)]
 
-def cutout(a, box):
+def cutout(a, box, removewhite=False):
     """Carve one cell: edge-flood ONLY the near-pure-white sheet (tight threshold) so
     pale wind/cloud FX survives, with NO global white key (which used to punch holes
     through the body where white FX crossed it). Keep all remaining content; anchor on
@@ -75,6 +76,9 @@ def cutout(a, box):
         comp = hl == i
         if comp.sum() < 0.0012 * h * w:
             keep |= comp
+    if removewhite:                                         # no-white-FX sheets (Dark Pulse, Fiery Wrath):
+        keep = keep & ~(np.abs(crop - WHITE).sum(2) < 18)  # strip ALL flat sheet-white (incl. trapped inside the
+                                                           # dark vortex) — there's no white FX on these sheets
     fg = keep
     out = np.dstack([crop.astype(np.uint8), (fg * 255).astype(np.uint8)])
     ys, xs = np.where(fg)
@@ -107,7 +111,8 @@ def main():
         if not os.path.exists(path):
             continue
         a = np.asarray(Image.open(path).convert('RGB')).astype(int)
-        frames = [cutout(a, b) for b in find_frames(a)]
+        rmw = fname not in WHITE_FX                          # strip trapped sheet-white except on white-FX sheets
+        frames = [cutout(a, b, removewhite=rmw) for b in find_frames(a)]
         sheets.append((key, label, frames))
     if not sheets:
         print('No sheets found in', SRC); return
