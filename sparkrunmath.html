@@ -422,12 +422,14 @@ const PIKA_HIT_W = 38, PIKA_HIT_H = 50;     // Pikachu's body half-size for proj
 // ---- Phase-1 movement prototype (duel only) ----
 const PROTO_MOVE = true;                    // master switch for the free-movement prototype
 const DUEL_SCALE = 0.58;                    // shrink the duelling actors so there's room to manoeuvre
+const DUEL_LIFT  = 96;                      // raise the fight up the screen so the bottom band is free for controls
 const PIKA_WALK  = 360;                     // walk speed while holding ◀/▶ (px/s)
 const DASH_SPEED = 1500, DASH_DUR = 0.16;   // double-tap dash: fast burst that STAYS put (no spring-back)
 const DOUBLE_TAP = 320;                     // ms window to register a double-tap dash
 const ARENA_L    = 56;                      // Pikachu's left bound (absolute x)
 const MELEE_RANGE = 210;                    // how close Pikachu must be to land a melee (Quick Attack)
 function protoActive(){ return PROTO_MOVE && boss && boss.cfg && boss.cfg.duel==='dojo'; }   // prototype is scoped to the Lucario dojo duel only
+function duelLift(){ return protoActive() ? DUEL_LIFT : 0; }   // how far the raised-floor prototype lifts the action
 // Which lane Pikachu counts as, from his y anchor. Rather than testing a single
 // point, we give him a vertical CATCH BAND (an area up his body, since his anchor
 // sits near his feet) and register the highest lane whose balloon band that catch
@@ -1110,7 +1112,7 @@ const DUEL_FIRE_COL = { lake:'#5fb0e6', dojo:'#a8e0ff', grove:'#7be05a' };
 function bossFire(special, mv, heavy){
   const drop = duelDrop();
   const x0 = BOSS_X + (boss.sideX||0) - 96, y0 = BOSS_Y + drop - 6 - (boss.hoverY||0);   // the boss's mouth/front (incl. hover height)
-  const x1 = PLAYER_X + (pikaDX||0) + 16,  y1 = player.y + DUEL_PIKA_DROP - 14;   // Pikachu
+  const x1 = PLAYER_X + (pikaDX||0) + 16,  y1 = player.y + DUEL_PIKA_DROP - 14 - duelLift();   // Pikachu
   const col = (mv && mv.col) || DUEL_FIRE_COL[boss.cfg.duel] || '#5fb0e6';
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
   const kind = boss.cfg.duel==='grove' ? 'leaf' : (boss.cfg.duel==='dojo' ? 'aura' : 'water');
@@ -1213,7 +1215,7 @@ function updateDuel(dt){
     if(s.threat && !s.spent){                            // a live foe attack: contact with Pikachu anywhere = a hit
       const p=Math.min(1,s.t/s.dur), arc=s.arc||34;
       const px=s.x0+(s.x1-s.x0)*p, py=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // projectile's current point on its arc
-      const cx=PLAYER_X+(pikaDX||0)+16, cy=player.y+DUEL_PIKA_DROP-14;                 // Pikachu's body centre right now
+      const cx=PLAYER_X+(pikaDX||0)+16, cy=player.y+DUEL_PIKA_DROP-14-duelLift();                 // Pikachu's body centre right now
       const hw=PIKA_HIT_W*(protoActive()?DUEL_SCALE:1), hh=PIKA_HIT_H*(protoActive()?DUEL_SCALE:1);   // hitbox tracks the shrunk actor
       if(Math.abs(px-cx) < s.r+hw && Math.abs(py-cy) < s.r+hh){                        // overlap → it connects
         s.spent=true; dodgeWin=0; duelSplash(px,py,s.col); struck=true; return false;
@@ -1384,12 +1386,12 @@ function pikaFire(m){
       if(pikaLunge.spr) pikaAtk=null;                          // don't also draw the perform-pose over the dash
     } else if(img){                                            // fly the real sprite to the boss
       const straight = (proj==='bolt');                        // beam shoots flat & fast; orbs lob a little
-      shots.push({ sprite:img, t:0, dur: m.beam?0.42:(straight?0.2:0.34), x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y,
+      shots.push({ sprite:img, t:0, dur: m.beam?0.42:(straight?0.2:0.34), x0:PLAYER_X+44, y0:player.y-12-duelLift(), x1:aim.x, y1:aim.y,
                    col:m.col, r:m.dmg>=3?22:16, arc: straight?6:26, hit:false, beam: !!m.beam });
     } else if(proj==='orb'){
-      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, arc:26, hit:false });
+      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12-duelLift(), x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, arc:26, hit:false });
     } else {                                                   // bolt (or dash outside a duel): a quick lightning arc
-      zaps.push({ life:0.32, max:0.32, x1:PLAYER_X+40, y1:player.y-6, x2:aim.x, y2:aim.y });
+      zaps.push({ life:0.32, max:0.32, x1:PLAYER_X+40, y1:player.y-6-duelLift(), x2:aim.x, y2:aim.y });
       bossImpact(aim);
     }
   } else {
@@ -2496,12 +2498,22 @@ function drawDuelBars(){
   drawEnergyBar(16, 90, 300, 'PIKACHU', pikaHP, '#ffe14a', '#caa400', false);
   drawEnergyBar(W-316, 90, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true, boss.maxHp);
 }
+// raised dojo platform: the fighters stand on its top edge; the band below holds the controls
+function drawDuelDeck(){
+  const dy = FLOOR_Y - DUEL_LIFT;                       // raised floor / platform top
+  const grad=g.createLinearGradient(0,dy,0,H);
+  grad.addColorStop(0,'#3a2a18'); grad.addColorStop(1,'#241a2e');
+  g.fillStyle=grad; g.fillRect(0,dy,W,H-dy);            // wooden dojo deck fading into shadow
+  g.fillStyle='rgba(255,225,150,.22)'; g.fillRect(0,dy,W,4);     // lit platform edge
+  g.strokeStyle='rgba(0,0,0,.25)'; g.lineWidth=2;               // plank seams
+  for(let x=40; x<W; x+=96){ g.beginPath(); g.moveTo(x,dy+6); g.lineTo(x,H); g.stroke(); }
+}
 function drawDuel(){
   const sc = boss.cfg.duel || scenePreview;   // scenePreview lets the dev menu show a scene before its duel is built
   if(sc==='grove'){
     drawGroveBack(); drawBossSprite();         // grove foe stands on the floor (no overlay)
   } else if(sc==='dojo'){
-    drawDojoBack(); drawBossSprite();          // dojo foe stands on the floor (no water overlay)
+    drawDojoBack(); drawDuelDeck(); drawBossSprite();   // dojo foe stands on the (raised) floor; deck holds the controls
   } else if(sc==='crystal'){
     drawCrystalBack(); drawBossSprite();       // Scizor stands among the crystals
   } else if(sc==='summit'){
@@ -2516,8 +2528,8 @@ function drawDuel(){
   // Earthquake shakes Ash + Pikachu (not the HUD): a decaying jitter
   const qs = quake ? (1-quake.t/quake.dur) : 0;
   const qOn = qs>0; if(qOn){ g.save(); g.translate(Math.sin(performance.now()/27)*14*qs, Math.abs(Math.sin(performance.now()/16))*9*qs); }
-  drawAsh();                // trainer on the bank
-  const py = player.y + DUEL_PIKA_DROP;   // duel: planted on the floor line
+  g.save(); if(protoActive()) g.translate(0,-duelLift()); drawAsh(); g.restore();   // trainer stands on the raised floor too
+  const py = player.y + DUEL_PIKA_DROP - duelLift();   // duel: planted on the (possibly raised) floor line
   const sup = pikaCast && pikaCast.super;          // Thunderbolt super: bigger glow + shake, invulnerable
   const shx = sup ? Math.sin(performance.now()/26)*5 : 0;
   const pscale = protoActive();                          // prototype shrinks the actor (scaled around its feet)
@@ -2662,7 +2674,7 @@ function duelDrop(){
   if(d==='lake')   return DUEL_DROP + (boss.subY||0);
   if(d==='grove')  return GROVE_DROP;
   if(d==='summit') return SUMMIT_DROP;
-  return DOJO_DROP;             // dojo / crystal
+  return DOJO_DROP - duelLift();   // dojo / crystal (prototype raises the dojo floor)
 }
 function drawBossSprite(){
   const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises/stands instead of sliding
@@ -2924,7 +2936,7 @@ function drawMoveBar(){
 }
 function drawPikaAttack(){
   const a=pikaAtk, p=Math.min(1,a.t/a.dur), seq=moveSeq(a.m);
-  const off = (bossMode==='duel') ? DUEL_PIKA_DROP : 0;   // keep the move grounded in a duel
+  const off = (bossMode==='duel') ? (DUEL_PIKA_DROP - duelLift()) : 0;   // keep the move grounded on the (raised) floor
   if(seq && seq.ready){                                   // animated 4-frame sequence (replaces Pikachu's body)
     const fi=Math.min(seq.n-1, Math.floor(p*seq.n));
     const s=seq.h/seq.ch, w=seq.cw*s, feet=player.y+28+off, x=PLAYER_X+pikaDX-w*seq.ax, y=feet-seq.h;
