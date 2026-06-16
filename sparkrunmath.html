@@ -755,6 +755,16 @@ function loadCaught(){ try{ return new Set(JSON.parse(localStorage.getItem(caugh
 function saveCaught(){ try{ localStorage.setItem(caughtKey(), JSON.stringify([...caught])); }catch(e){ /* private mode / file:// — gallery just won't persist */ } }
 let caught=loadCaught();
 function catchMon(name){ if(caught.has(name)) return false; caught.add(name); saveCaught(); return true; }
+// lifetime star bank (across runs + packs) → Trainer Rank + collectible stickers
+function loadStars(){ try{ return Math.max(0, +localStorage.getItem('sparkrun.stars.v1')||0); }catch(e){ return 0; } }
+let starTotal=loadStars();
+function addStars(n){ starTotal+=n; try{ localStorage.setItem('sparkrun.stars.v1', starTotal); }catch(e){} }
+// rank tiers + sticker milestones, keyed on the lifetime star total
+const STAR_RANKS=[ {at:0,name:'Rookie',col:'#aeb6c6'}, {at:60,name:'Bronze',col:'#cd8a4e'}, {at:180,name:'Silver',col:'#cdd6e6'},
+  {at:380,name:'Gold',col:'#ffd23a'}, {at:680,name:'Platinum',col:'#8fe6ff'}, {at:1100,name:'Master',col:'#ff8ad8'} ];
+const STAR_STICKERS=[ {at:30,e:'⭐'}, {at:90,e:'🌟'}, {at:200,e:'🏅'}, {at:340,e:'🎖️'}, {at:520,e:'🏆'}, {at:780,e:'🌈'}, {at:1100,e:'👑'} ];
+function starRank(){ let r=STAR_RANKS[0]; for(const t of STAR_RANKS) if(starTotal>=t.at) r=t; return r; }
+function nextRank(){ return STAR_RANKS.find(t=>t.at>starTotal)||null; }
 let dexReturn='menu';       // where a tap on the gallery screen goes next (menu | levelup | won)
 let newlyCaught=null;       // name of the Pokémon just added (highlighted on the gallery), or null
 let dexT=0;                 // gallery animation clock
@@ -1513,7 +1523,7 @@ function update(dt){
       gate.resolveT=touched?0.9:0.6;                       // a miss clears a little quicker
       if(player.jumping) player.descending=true;        // card's passed — drop back to the ground
       if(gate.result){
-        score+=(10+streak*2)*(speedMode?2:1); streak++; player.mood='happy'; player.moodT=0.7;
+        { const g=(10+streak*2)*(speedMode?2:1); score+=g; addStars(g); } streak++; player.mood='happy'; player.moodT=0.7;
         Audio8.sfx('good'); flash={a:0.42,col:'#c9ffe0'}; if(PACK.audio) ashYayT=1.0;   // Ash cheers in the prompt box
         // satisfying pass-through pop, right where she caught the answer (any lane)
         correctPop(PLAYER_X, player.y);
@@ -1577,7 +1587,7 @@ function update(dt){
         if(bossChal.result){
           let m=curMove(); if(!canCast(m)) m=PIKA_MOVES[0];        // safety fallback to Quick Attack
           charge=Math.max(0,Math.min(MAX_CHARGE, charge - m.cost + (m.gain||0)));
-          boss.hp-=m.dmg; if(m.dmg>0) boss.hurt=0.6; streak++; score+=20;
+          boss.hp-=m.dmg; if(m.dmg>0) boss.hurt=0.6; streak++; score+=20; addStars(20);
           Audio8.sfx('good'); flash={a:0.4,col:m.col}; pikaFire(m); if(PACK.audio) ashYayT=1.0;
           cardCheer(bossChal.x+CARD_W/2, LANE_Y[bossChal.correctLane]);   // green + gold sparkles on the right card
           player.mood='happy'; player.moodT=0.7;
@@ -2029,7 +2039,8 @@ function drawDex(){
   g.textAlign='center';
   g.fillStyle=C.glow; g.font='700 54px Fredoka, sans-serif'; g.fillText('Spark Friends', W/2, 92);
   g.fillStyle=C.cream; g.font='600 22px Fredoka, sans-serif';
-  g.fillText(caught.size+' / '+BOSSES.length+' befriended', W/2, 126);
+  g.fillText(caught.size+' / '+BOSSES.length+' befriended', W/2, 124);
+  if(caught.size){ g.fillStyle='rgba(255,244,230,.6)'; g.font='600 14px Fredoka, sans-serif'; g.fillText('tap a friend to hear it', W/2, 146); }
 
   const n=BOSSES.length, cw=150, gap=18, total=n*cw+(n-1)*gap, sx=(W-total)/2;
   const top=168, ch=204, midY=top+ch/2-8;
@@ -2065,9 +2076,22 @@ function drawDex(){
     }
   }
 
+  // --- Trainer Rank + collectible sticker shelf (lifetime stars) ---
+  const rk=starRank(), nx=nextRank();
+  g.textAlign='center';
+  g.fillStyle=rk.col; g.font='700 22px Fredoka, sans-serif';
+  g.fillText('🏆 '+rk.name+' Trainer    ⭐ '+starTotal, W/2, 400);
+  const sn=STAR_STICKERS.length, sw=44, sgap=12, stot=sn*sw+(sn-1)*sgap, ssx=(W-stot)/2, sy=416;
+  for(let i=0;i<sn;i++){ const st=STAR_STICKERS[i], got=starTotal>=st.at, x=ssx+i*(sw+sgap);
+    g.fillStyle=got?'rgba(255,225,90,.18)':'rgba(255,255,255,.05)'; rr(x,sy,sw,sw,12); g.fill();
+    g.strokeStyle=got?'rgba(255,225,90,.7)':'rgba(255,255,255,.12)'; g.lineWidth=2; rr(x,sy,sw,sw,12); g.stroke();
+    g.globalAlpha=got?1:0.28; g.font='28px serif'; g.textBaseline='middle'; g.fillText(got?st.e:'🔒', x+sw/2, sy+sw/2); g.textBaseline='alphabetic'; g.globalAlpha=1;
+  }
+  g.fillStyle='rgba(255,244,230,.62)'; g.font='600 14px Fredoka, sans-serif';
+  g.fillText(nx ? ((nx.at-starTotal)+' ⭐ to '+nx.name+' Trainer') : 'Top rank reached — you’re a Master! 👑', W/2, sy+sw+22);
+
   const prompt = dexReturn==='menu' ? 'Tap to go back' : 'Tap to continue →';
-  if(caught.size){ g.fillStyle='rgba(255,244,230,.65)'; g.font='600 16px Fredoka, sans-serif'; g.fillText('tap a friend to hear it', W/2, H-54); }
-  g.fillStyle=C.glow; g.font='700 26px Fredoka, sans-serif'; g.fillText(prompt, W/2, H-30);
+  g.fillStyle=C.glow; g.font='700 24px Fredoka, sans-serif'; g.fillText(prompt, W/2, H-22);
   g.textAlign='left';
 }
 
