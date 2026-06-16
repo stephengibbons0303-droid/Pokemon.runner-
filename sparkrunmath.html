@@ -433,6 +433,7 @@ const DUEL_SCALE = 0.58;                    // shrink the duelling actors so the
 const DUEL_LIFT  = 54;                      // raise the fight up the screen so the bottom band is free for controls
 const PIKA_WALK  = 360;                     // walk speed while holding ◀/▶ (px/s)
 const DASH_SPEED = 1500, DASH_DUR = 0.16;   // double-tap dash: fast burst that STAYS put (no spring-back)
+const LEAP_SPEED = 470, COMBO_WINDOW = 0.45; // dash→jump combo: arced leap speed + how long after a dash a jump still counts as a leap
 const DOUBLE_TAP = 320;                     // ms window to register a double-tap dash
 const ARENA_L    = 56;                      // Pikachu's left bound (absolute x)
 const MELEE_RANGE = 210;                    // how close Pikachu must be to land a melee (Quick Attack)
@@ -830,6 +831,7 @@ let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0, chargeT=0, tbCD=0;   // foe 
 let ashWarnCD=0;                                     // cooldown so Ash's "be careful!" warning doesn't spam
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
 let moveDir=0, pikaVX=0, dashT=0, dashDir=0;   // prototype: walk direction, lateral velocity, dash timer/direction
+let leapVX=0, comboDir=0, comboT=0, airQA=null, pikaWasAir=false;   // dash→jump leap velocity, combo window, queued mid-air Quick Attack
 let moveHolds={}, lastTap={dir:0,t:0};         // held movement controls (by pointer/key id) + double-tap detector
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
 const BASIC_DMG=10, SPECIAL_DMG=15, SUPER_DMG=30;    // % energy per hit; super = a charged signature move (Pikachu: Thunderbolt; bosses: their heavy)
@@ -957,6 +959,7 @@ function enterBoss(retry){
   if(bossMode==='duel'){
     foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0; player.dodging=false;
     moveDir=0; pikaVX=0; dashT=0; dashDir=0; moveHolds={}; lastTap={dir:0,t:0};   // reset prototype movement
+    leapVX=0; comboDir=0; comboT=0; airQA=null; pikaWasAir=false;   // reset leap/combo state
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
@@ -979,6 +982,7 @@ function enterBoss(retry){
 // lost the boss fight → spend a heart and retry; out of hearts → game over.
 // (You get as many attempts at the boss as you have hearts left.)
 function bossFail(){
+  if(protoActive()){ Audio8.sfx('bad'); enterBoss(true); return; }   // prototype: faint = full battle restart, unlimited attempts (desirable difficulty)
   hearts=Math.max(0, hearts-1);
   if(hearts>0){ Audio8.sfx('bad'); enterBoss(true); }
   else { Audio8.sfx('bad'); setSpeedMode(false); state='over'; }
@@ -1042,6 +1046,9 @@ function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.ev
 // tap a move: basic fires instantly, special winds up a moment first
 function castMove(m){
   if(castCD>0 || pikaCast || boss.defeated) return;
+  if(protoActive() && m.kind==='basic' && player.air){   // mid-leap Quick Attack → arcs in and lands for +10%
+    if(!airQA){ airQA=m; pikaAtk={m, spr:bossSprite(m.file), t:0, dur:0.5}; Audio8.sfx('hop'); bossMsg='Aerial Quick Attack!'; bossMsgT=0.5; }
+    return; }
   if(protoActive() && m.kind==='basic' && !inMeleeRange()){   // Quick Attack is melee — get close or it whiffs
     Audio8.sfx('bad'); bossMsg='Too far — get closer! 👊'; bossMsgT=0.8; return; }
   if(charge < (m.cost||0)){ Audio8.sfx('bad'); bossMsg='Not enough energy! ⚡'; bossMsgT=0.7; return; }   // energy now gates duel moves
@@ -1158,9 +1165,13 @@ function startMoveHold(id,dir){
 }
 function endMoveHold(id){ if(id in moveHolds){ delete moveHolds[id]; recomputeMoveDir(); } }
 function triggerDash(dir){ dashDir=dir; dashT=DASH_DUR; dodgeRoll={dir, t:0, dur:0.34};   // dash = quick roll that stays put
+  comboDir=dir; comboT=COMBO_WINDOW;                    // arm the dash→jump leap combo
   player.mood='happy'; player.moodT=0.3; Audio8.sfx('hop'); }
-function duelJump(){ if(player.air) return;            // a quick vertical hop (dodge over a low attack)
-  player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0; player.lane=2; player.targetY=LANE_Y[2]; Audio8.sfx('hop'); }
+function duelJump(){ if(player.air) return;
+  player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0; player.lane=2; player.targetY=LANE_Y[2];
+  if(comboT>0){ leapVX=comboDir*LEAP_SPEED; comboT=0; bossMsg=(comboDir>0?'Leap ▶':'Leap ◀'); bossMsgT=0.4; }  // dash→jump = arced leap
+  else leapVX=0;                                        // plain vertical hop
+  Audio8.sfx('hop'); }
 function inMeleeRange(){ return Math.abs((PLAYER_X+pikaDX) - (BOSS_X+(boss.sideX||0))) < MELEE_RANGE; }
 // the boss's attack connects with Pikachu (shield soaks it, else energy + comeback check)
 function foeHit(){
@@ -1243,12 +1254,22 @@ function updateDuel(dt){
   chargeT+=dt; if(charge<MAX_CHARGE && chargeT>=1.4){ charge=Math.min(MAX_CHARGE, charge+1); chargeT=0; }
 
   if(protoActive()){
-    // --- free lateral movement: walk while holding ◀/▶, dash on a double-tap (no spring-back) ---
+    if(comboT>0) comboT-=dt;                              // dash→jump leap window
+    // --- free lateral movement: walk while holding ◀/▶, dash on a double-tap, or ride an arced leap ---
     if(dashT>0){ dashT-=dt; pikaDX += dashDir*DASH_SPEED*dt; pikaVX=0; }
+    else if(player.air && leapVX){ pikaDX += leapVX*dt; }   // arced leap: horizontal travel through the jump
     else { const tv=moveDir*PIKA_WALK; pikaVX += (tv-pikaVX)*Math.min(1,dt*12); pikaDX += pikaVX*dt; }
     const minDX = ARENA_L-PLAYER_X, maxDX = (BOSS_X+(boss.sideX||0)-120)-PLAYER_X;   // approach the boss, don't overlap
     if(pikaDX<minDX){ pikaDX=minDX; pikaVX=0; dashT=0; }
     if(pikaDX>maxDX){ pikaDX=maxDX; pikaVX=0; dashT=0; }
+    // --- a leap (or hop) has landed: stop the arc and resolve any mid-air Quick Attack ---
+    if(pikaWasAir && !player.air){
+      leapVX=0;
+      if(airQA){ const m=airQA; airQA=null;
+        if(inMeleeRange()){ applyPikaHit(m, Math.round(duelDmg(m)*1.1)); Audio8.sfx('good'); bossMsg='Aerial Quick Attack! +10% 💥'; bossMsgT=0.9; }
+        else { Audio8.sfx('bad'); bossMsg='Whiffed the landing!'; bossMsgT=0.6; } }
+    }
+    pikaWasAir = player.air;
     // --- boss paces forward/back so spacing matters — but ONLY when idle, and eased,
     //     so it never fights the evade / Synthesis-dive that also drive boss.sideX ---
     if(boss.diveState==='up' && !boss.evade && !boss.charging && !bossLunge && !boss.defeated){
