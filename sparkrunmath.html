@@ -1249,8 +1249,13 @@ function updateDuel(dt){
     const minDX = ARENA_L-PLAYER_X, maxDX = (BOSS_X+(boss.sideX||0)-120)-PLAYER_X;   // approach the boss, don't overlap
     if(pikaDX<minDX){ pikaDX=minDX; pikaVX=0; dashT=0; }
     if(pikaDX>maxDX){ pikaDX=maxDX; pikaVX=0; dashT=0; }
-    // --- boss paces forward/back so spacing matters (advance to threaten, retreat to fire) ---
-    boss.paceT=(boss.paceT||0)+dt; boss.sideX = -110 + Math.sin(boss.paceT*0.55)*150;
+    // --- boss paces forward/back so spacing matters — but ONLY when idle, and eased,
+    //     so it never fights the evade / Synthesis-dive that also drive boss.sideX ---
+    if(boss.diveState==='up' && !boss.evade && !boss.charging && !bossLunge && !boss.defeated){
+      boss.paceT=(boss.paceT||0)+dt;
+      const target = -90 + Math.sin(boss.paceT*0.5)*110;     // boss x ≈ 560..780, stays on-screen
+      boss.sideX += (target-(boss.sideX||0))*Math.min(1,dt*2.2);   // ease, don't snap
+    }
   }
 
   // --- Earthquake: un-dodgeable. The field shakes (drawn elsewhere); the hit lands mid-quake. ---
@@ -2531,7 +2536,7 @@ function drawDuel(){
     drawBossSprite();
     drawLakeFront();        // water in front of his lower body → partly submerged
   }
-  if(dodgeWin>0) drawDodgeWave();
+  if(dodgeWin>0 && !protoActive()) drawDodgeWave();
   drawZaps(); drawShots(); drawFoeShots();   // Pikachu's bolts/orbs + the boss's incoming blast
   // Earthquake shakes Ash + Pikachu (not the HUD): a decaying jitter
   const qs = quake ? (1-quake.t/quake.dur) : 0;
@@ -3091,7 +3096,7 @@ if(PROTO_MOVE){ try{ devJump('boss',1); skipIntro(); duelBegin(); }catch(e){ con
   // floating snapshot button (DOM element → never appears in the saved PNG)
   const snap=document.createElement('button');
   snap.textContent='📷'; snap.title='Save a PNG screenshot of the game';
-  snap.style.cssText='position:fixed;left:8px;top:8px;z-index:60;font-size:18px;line-height:1;padding:5px 8px;border-radius:9px;border:2px solid #9fd8ff;background:rgba(20,14,36,.8);color:#fff;cursor:pointer;opacity:.85;';
+  snap.style.cssText='position:fixed;left:8px;top:calc(max(8px,env(safe-area-inset-top)) + 50px);z-index:60;font-size:18px;line-height:1;padding:5px 8px;border-radius:9px;border:2px solid #9fd8ff;background:rgba(20,14,36,.8);color:#fff;cursor:pointer;opacity:.85;';
   snap.addEventListener('click', ()=>{ try{ const a=document.createElement('a'); a.download='pokemon-duel-'+Date.now()+'.png'; a.href=cv.toDataURL('image/png'); a.click(); }catch(e){ alert('Snapshot failed: '+e.message); } });
   document.body.appendChild(snap);
 }
