@@ -271,7 +271,8 @@ const BOSSES = [
   { name:'Galarian Moltres', file:'galmoltres.png', tint:'#c03a6a',
     duel:'summit',                                // L5 volcanic-perch action duel
     air:true, evade:'soar', lowhp:'enrage',       // hovers in the air + descends to the perch to attack; soars aside to dodge; flares up at low HP
-    flip:true,                                    // face Pikachu
+    fly:['moltres_fly0.png','moltres_fly1.png'],  // 2-frame wing-flap for the hover idle
+    // (no flip: his art already faces left toward Pikachu)
     roar:'moltres_cry.wav', cry:'moltres_cry.wav', roar2:'moltres_cry.wav',
     atkSeqs:['moltres_fierywrath.png','moltres_airslash.png','moltres_hurricane.png'],   // cycled flying attacks
     powerSeq:'moltres_fierywrath.png',            // flare-up flourish on the enrage
@@ -899,6 +900,7 @@ function enterBoss(retry){
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; pikaDX=0;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
   (cfg.moves||[]).forEach(m=>{ if(m.proj) bossSprite(m.proj); });   // preload real projectile art (no pop-in)
+  (cfg.fly||[]).forEach(f=>bossSprite(f));                          // preload hover-flap frames
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
   bossHold=0; bossIntroQueue=[];
@@ -2488,6 +2490,10 @@ function drawBossSprite(){
   // swap to the aggressive reaction pose while flinching or attacking
   const reacting = !boss.defeated && (boss.hurt>0 || boss.atk>0) && boss.cfg.hurtFile;
   let spr = reacting ? bossSprite(boss.cfg.hurtFile) : bossSprite(boss.cfg.file);
+  if(boss.cfg.fly && !reacting){                           // air boss idle: slow wing-flap (Moltres)
+    const f=bossSprite(boss.cfg.fly[(performance.now()/420|0)%boss.cfg.fly.length]);
+    if(f&&f.ready) spr=f;
+  }
   if(!(spr&&spr.ready)) spr=bossSprite(boss.cfg.file);     // fall back to idle if not loaded yet
   const aseq = (boss.atkSeq && boss.atkSeq.seq.ready) ? boss.atkSeq : null;   // animated special move
   const lungeSpr = (bossLunge && bossLunge.sprite && bossLunge.sprite.ready) ? bossLunge.sprite : null;   // melee charge body
