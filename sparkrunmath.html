@@ -504,7 +504,7 @@ function crossfade(toFast){
     volLevel(){ return level; }, volMul(){ return volMul(); },
     isMuted(){return muted;},
     pauseAudio(p){ if(p){ bgm.pause(); fast.pause(); } else if(started && !muted){ (speedOn?fast:bgm).play().catch(()=>{}); } },
-    startMusic(){ ensure(); if(started) return; started=true; applyVol(); if(!muted) bgm.play().catch(()=>{}); },
+    startMusic(){ ensure(); if(ctx&&ctx.state==='suspended') ctx.resume(); if(started) return; started=true; applyVol(); if(!muted) bgm.play().catch(()=>{}); },
     setSpeed(on){ if(on===speedOn) return; speedOn=on; if(started) crossfade(on); },
     isSpeed(){ return speedOn; },
     cheer(){ if(muted) return; try{ cheer.volume=0.85*volMul(); cheer.currentTime=0; cheer.play().catch(()=>{}); }catch(e){} },
@@ -1884,8 +1884,7 @@ function drawHUD(){
   {
     g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
     const duelB = state==='boss' && bossMode==='duel';
-    // duel: top-left level with the pause/volume buttons (and clear of the fullscreen button + the energy bar below)
-    let hx = duelB?64:22, hy = duelB?22 : (state==='boss'?52:H-40);
+    let hx=22, hy = duelB?54 : (state==='boss'?52:H-40);   // duel: just below the star score, above the energy bar (y=90)
     for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
   }
 
