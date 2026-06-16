@@ -412,6 +412,12 @@ const DUEL_PIKA_DROP = 16;
 const RISE_EASE = 9;                       // eased-rise rate — lower = gentler / floatier climb
 const JUMP_HANG = 0.44;                    // seconds to hover at the apex before dropping ("a short time")
 const JUMP_GRAV = 3400;                    // downward acceleration (px/s²) — higher = steeper, snappier fall
+// Duel dodge feel: a side-step lunges out, holds clear of the attack, then settles back;
+// an up-dodge is a big hop with a brief hover. (Bigger / slower than the old quick bounce.)
+const DODGE_REACH = 168;                   // how far Pikachu lunges sideways on a roll-dodge (px)
+const DODGE_DUR   = 0.78;                   // roll-dodge length: dash out → hold → settle back (s)
+const DODGE_OUT   = 0.24, DODGE_HOLD = 0.6; // roll phases: reach full extent by 24%, hold until 60%, then return
+const DUEL_HANG   = 0.26;                   // hover time at the top of an up-dodge before dropping (s)
 // Which lane Pikachu counts as, from his y anchor. Rather than testing a single
 // point, we give him a vertical CATCH BAND (an area up his body, since his anchor
 // sits near his feet) and register the highest lane whose balloon band that catch
@@ -1109,9 +1115,9 @@ function doDodge(dir){
   if(pikaCast && !pikaCast.super) return;             // committed to a normal special → can't dodge (it'll connect)
   const needRoll = boss.atkArc==='high';
   const correct = needRoll ? (dir==='back'||dir==='fwd') : (dir==='up');
-  dodgeWin=0; player.air=true; player.reachedApex=false; player.jumpT=0;
-  if(dir==='up'){ player.lane=1; player.targetY=LANE_Y[1]; }
-  else { const d=(dir==='back'?-1:1); dodgeRoll={dir:d,t:0,dur:0.5}; player.targetY=LANE_Y[1]; }
+  dodgeWin=0; player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0;
+  if(dir==='up'){ player.lane=2; player.targetY=LANE_Y[2]; }      // up = a big hop to the high lane (was a small mid-lane bounce)
+  else { const d=(dir==='back'?-1:1); dodgeRoll={dir:d,t:0,dur:DODGE_DUR}; player.targetY=LANE_Y[1]; }
   if(correct){ player.mood='happy'; player.moodT=0.4; Audio8.sfx('hop'); bossMsg = needRoll?'Rolled clear!':'Jumped clear!'; bossMsgT=0.7; }
   else { foeHit(); if(state!=='over'){ bossMsg='Wrong way!'; bossMsgT=0.8; } }   // mis-dodge → it connects
 }
@@ -1147,16 +1153,22 @@ function updateDuel(dt){
   // Ash pose: punch on victory, else revert to ready after a momentary pose
   if(boss.defeated) ashPose='punch';
   else if(ashPoseT>0){ ashPoseT-=dt; if(ashPoseT<=0) ashPose='ready'; }
-  // sideways roll-hop: ease Pikachu out and back along x
+  // sideways roll-hop: dash out, hold clear of the attack, then settle back (no instant snap-back)
   if(dodgeRoll){ dodgeRoll.t+=dt; const p=Math.min(1,dodgeRoll.t/dodgeRoll.dur);
-    pikaDX=Math.sin(p*Math.PI)*dodgeRoll.dir*98; if(p>=1){ dodgeRoll=null; pikaDX=0; } }
+    let f; if(p<DODGE_OUT) f=Math.sin((p/DODGE_OUT)*(Math.PI/2));                 // lunge out (ease-out)
+    else if(p<DODGE_HOLD) f=1;                                                    // hold at full extent
+    else f=Math.cos(((p-DODGE_HOLD)/(1-DODGE_HOLD))*(Math.PI/2));                 // ease back to centre
+    pikaDX=f*dodgeRoll.dir*DODGE_REACH; if(p>=1){ dodgeRoll=null; pikaDX=0; } }
   // melee lunge: Pikachu darts toward the boss, connects at the apex, returns
   if(pikaLunge){ pikaLunge.t+=dt; const p=Math.min(1,pikaLunge.t/pikaLunge.dur);
     pikaDX=Math.sin(p*Math.PI)*pikaLunge.reach;
     if(!pikaLunge.hit && p>=0.5){ pikaLunge.hit=true; bossImpact(); }
     if(p>=1){ pikaLunge=null; pikaDX=0; } }
-  // let a dodge-hop fall back down once it has peaked
-  if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
+  // let an up-dodge hover briefly at the top, then fall back down
+  if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){
+    player.dodgeHangT=(player.dodgeHangT||0)+dt;
+    if(player.dodgeHangT>=DUEL_HANG){ player.targetY=LANE_Y[0]; player.lane=0; }
+  }
   // resolve a special move once its wind-up finishes
   if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const c=pikaCast; pikaCast=null; applyPikaHit(c.m, c.super?SUPER_DMG:null); Audio8.sfx(c.super?'win':'good'); castCD=(c.super?0.7:0.5)*(1+levelIdx*0.1); } }
   if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
