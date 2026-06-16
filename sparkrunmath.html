@@ -62,6 +62,14 @@
 
 const cv = document.getElementById('game');
 const g  = cv.getContext('2d');
+// Load sprites CORS-enabled so the canvas stays exportable (toDataURL snapshots).
+// If the host doesn't send CORS headers, fall back to a normal load so visuals never break.
+function mkImg(){
+  const i=new Image();
+  i.crossOrigin='anonymous';
+  i.onerror=function(){ if(i.crossOrigin){ i.crossOrigin=null; if(i.removeAttribute) i.removeAttribute('crossorigin'); const s=i.src; i.src=''; i.src=s; i.onerror=null; } };  // CORS unavailable → load normally
+  return i;
+}
 const W = 960, H = 540;                 // fixed virtual resolution
 
 // ---------- responsive touch controls ----------
@@ -127,21 +135,21 @@ function drawTinted(src, sx,sy,sw,sh, dx,dy,dw,dh, rgba){
 }
 
 /* ---------- sprite sheets: Pikachu run cycle + jump ---------- */
-const pika = { img:new Image(), ready:false, frames:5, cw:460, ch:386, cnv:null };
+const pika = { img:mkImg(), ready:false, frames:5, cw:460, ch:386, cnv:null };
 pika.img.onload = ()=>{ pika.cnv=cleanSheet(pika.img, pika.frames); pika.ready=true; };
 pika.img.src = 'pikachu-run.png';
 const PIKA_H = 120;                       // on-screen run height (px)
-const jump = { img:new Image(), ready:false, frames:4, cw:318, ch:265, cnv:null };
+const jump = { img:mkImg(), ready:false, frames:4, cw:318, ch:265, cnv:null };
 jump.img.onload = ()=>{ jump.cnv=cleanSheet(jump.img, jump.frames); jump.ready=true; };
 jump.img.src = 'pikachu-jump.png';
 const JUMP_H = 132;                       // on-screen jump height (px)
-const celeb = { img:new Image(), ready:false, frames:4, cw:177, ch:179 };
+const celeb = { img:mkImg(), ready:false, frames:4, cw:177, ch:179 };
 celeb.img.onload = ()=>{ celeb.ready=true; };
 celeb.img.src = 'pikachu-celebrate.png';
 // dodge-roll: 4 separately-sized frames (start → tuck → descent → end), one uniform scale
 const roll = { frames:[], n:4, loaded:0, ready:false, scale:0.58 };
 ['pika_roll0.png','pika_roll1.png','pika_roll2.png','pika_roll3.png'].forEach((f,i)=>{
-  const o=new Image(); o.onload=()=>{ if(++roll.loaded>=roll.n) roll.ready=true; }; o.src=f; roll.frames[i]=o;
+  const o=mkImg(); o.onload=()=>{ if(++roll.loaded>=roll.n) roll.ready=true; }; o.src=f; roll.frames[i]=o;
 });
 // animated special-move sequences (4-frame strips: prep → charge → launch → aftermath)
 // h = on-screen height of a cell; ax = how far left of Pikachu's x the cell is anchored
@@ -151,7 +159,7 @@ const MOVE_SEQ = {
   eb:{ file:'pika_seq_eb.png', cw:214, ch:173, h:172, ax:0.34 },
   it:{ file:'pika_seq_it.png', cw:210, ch:132, h:146, ax:0.40 },
 };
-for(const k in MOVE_SEQ){ const s=MOVE_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
+for(const k in MOVE_SEQ){ const s=MOVE_SEQ[k]; s.n=4; s.img=mkImg(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 function moveSeq(m){ return m ? MOVE_SEQ[m.key] : null; }
 // Gyarados special-move sequences (4-frame strips), keyed by the move's sprite file
 const BOSS_SEQ = {
@@ -180,7 +188,7 @@ const BOSS_SEQ = {
   'moltres_darkpulse.png':  { file:'moltres_seq_dp.png', cw:793, ch:467 },
   'moltres_hurricane.png':  { file:'moltres_seq_hr.png', cw:930, ch:467 },
 };
-for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=s.n||4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
+for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=s.n||4; s.img=mkImg(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
 const HOVER_H = 110;                              // how high an 'air' boss (Moltres) floats above its perch
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
@@ -307,7 +315,7 @@ const ACH_ANIM = {
   // 'Scizor':          { file:'dex_scizor.png',   cw:200, ch:200, n:6, fps:8 },
   // 'Galarian Moltres':{ file:'dex_moltres.png',  cw:200, ch:200, n:6, fps:8 },
 };
-for(const k in ACH_ANIM){ const s=ACH_ANIM[k]; s.n=s.n||4; s.fps=s.fps||8; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
+for(const k in ACH_ANIM){ const s=ACH_ANIM[k]; s.n=s.n||4; s.fps=s.fps||8; s.img=mkImg(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 
 const bossImgs={};                                // lazy sprite cache, keyed by filename
 // Some source PNGs ship with a semi-transparent dark fringe (a low-alpha matte
@@ -336,7 +344,7 @@ function cleanSprite(o){
 }
 function bossSprite(file){
   if(!file) return null;
-  if(!bossImgs[file]){ const o={img:new Image(),ready:false,cnv:null,file}; o.img.onload=()=>{ cleanSprite(o); o.ready=true; }; o.img.src=file; bossImgs[file]=o; }
+  if(!bossImgs[file]){ const o={img:mkImg(),ready:false,cnv:null,file}; o.img.onload=()=>{ cleanSprite(o); o.ready=true; }; o.img.src=file; bossImgs[file]=o; }
   return bossImgs[file];
 }
 // the drawable for a sprite: the cleaned canvas if we have it, else the raw image
@@ -422,7 +430,7 @@ const PIKA_HIT_W = 38, PIKA_HIT_H = 50;     // Pikachu's body half-size for proj
 // ---- Phase-1 movement prototype (duel only) ----
 const PROTO_MOVE = true;                    // master switch for the free-movement prototype
 const DUEL_SCALE = 0.58;                    // shrink the duelling actors so there's room to manoeuvre
-const DUEL_LIFT  = 47;                      // raise the fight up the screen so the bottom band is free for controls
+const DUEL_LIFT  = 54;                      // raise the fight up the screen so the bottom band is free for controls
 const PIKA_WALK  = 360;                     // walk speed while holding ◀/▶ (px/s)
 const DASH_SPEED = 1500, DASH_DUR = 0.16;   // double-tap dash: fast burst that STAYS put (no spring-back)
 const DOUBLE_TAP = 320;                     // ms window to register a double-tap dash
