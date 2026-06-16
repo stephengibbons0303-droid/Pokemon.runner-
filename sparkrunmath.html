@@ -832,6 +832,8 @@ let ashWarnCD=0;                                     // cooldown so Ash's "be ca
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
 let moveDir=0, pikaVX=0, dashT=0, dashDir=0;   // prototype: walk direction, lateral velocity, dash timer/direction
 let leapVX=0, comboDir=0, comboT=0, airQA=null, pikaWasAir=false;   // dash→jump leap velocity, combo window, queued mid-air Quick Attack
+let hitShake=0, knockT=0, knockVX=0;           // impact feel: screen shake + Pikachu knockback on taking a hit
+function haptic(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }   // Android buzz on impact (iOS Safari has no web vibration)
 let moveHolds={}, lastTap={dir:0,t:0};         // held movement controls (by pointer/key id) + double-tap detector
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
 const BASIC_DMG=10, SPECIAL_DMG=15, SUPER_DMG=30;    // % energy per hit; super = a charged signature move (Pikachu: Thunderbolt; bosses: their heavy)
@@ -960,6 +962,7 @@ function enterBoss(retry){
     foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0; player.dodging=false;
     moveDir=0; pikaVX=0; dashT=0; dashDir=0; moveHolds={}; lastTap={dir:0,t:0};   // reset prototype movement
     leapVX=0; comboDir=0; comboT=0; airQA=null; pikaWasAir=false;   // reset leap/combo state
+    hitShake=0; knockT=0; knockVX=0;                                // reset impact state
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
@@ -1077,6 +1080,7 @@ function applyPikaHit(m, dmg){
     bossMsg=boss.cfg.name+(ev==='soar'?' soars aside!':ev==='sidestep'?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
   }
   boss.hp=Math.max(0, boss.hp-(dmg!=null?dmg:duelDmg(m))); boss.hurt=0.6;
+  if(protoActive()){ boss.kbX=(boss.kbX||0) + (sup?34:22); hitShake=Math.max(hitShake, sup?12:7); haptic(sup?40:22); }   // boss recoils on impact
   pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:sup?0.5:0.32,col:m.col};
   if(m.shield) pikaShield=Math.min(3, pikaShield+m.shield);
   if(Math.random()<0.3){ ashSay(pick(ASH_CHEER)); ashShow('point',1.0); }
@@ -1166,7 +1170,7 @@ function startMoveHold(id,dir){
 function endMoveHold(id){ if(id in moveHolds){ delete moveHolds[id]; recomputeMoveDir(); } }
 function triggerDash(dir){ dashDir=dir; dashT=DASH_DUR; dodgeRoll={dir, t:0, dur:0.34};   // dash = quick roll that stays put
   comboDir=dir; comboT=COMBO_WINDOW;                    // arm the dash→jump leap combo
-  player.mood='happy'; player.moodT=0.3; Audio8.sfx('hop'); }
+  player.mood='happy'; player.moodT=0.3; Audio8.sfx('hop'); haptic(12); }
 function duelJump(){ if(player.air) return;
   player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0; player.lane=2; player.targetY=LANE_Y[2];
   if(comboT>0){ leapVX=comboDir*LEAP_SPEED; comboT=0; bossMsg=(comboDir>0?'Leap ▶':'Leap ◀'); bossMsgT=0.4; }  // dash→jump = arced leap
@@ -1177,8 +1181,12 @@ function inMeleeRange(){ return Math.abs((PLAYER_X+pikaDX) - (BOSS_X+(boss.sideX
 function foeHit(){
   if(pikaCast && pikaCast.super){ bossMsg='Pikachu is charging — unhurt! ⚡'; bossMsgT=0.8; return; }   // invulnerable mid-Thunderbolt
   if(pikaShield>0){ pikaShield--; bossMsg='Blocked! 🛡️'; bossMsgT=1.0; Audio8.sfx('select'); return; }
-  pikaHP=Math.max(0, pikaHP-boss.atkDmg); oopsPuff(PLAYER_X,player.y); Audio8.sfx('bad');
+  pikaHP=Math.max(0, pikaHP-boss.atkDmg); oopsPuff(PLAYER_X+(pikaDX||0),player.y); Audio8.sfx('bad');
   flash={a:0.45,col:'#ffb3b8'}; bossMsg='Ouch!'; bossMsgT=0.9;
+  if(protoActive()){                                      // physical impact: knock Pikachu away, shake, buzz
+    const away=(PLAYER_X+pikaDX) < (BOSS_X+(boss.sideX||0)) ? -1 : 1;
+    knockVX=away*640; knockT=0.2; hitShake=Math.max(hitShake,12); player.mood='oops'; player.moodT=0.5; haptic(55);
+  }
   if(pikaHP<=0){ bossFail(); return; }                   // fainted → spend a heart and retry (or game over)
   if(pikaHP<=18 && !boss.riled) rileUp();                // low-energy comeback surge
 }
@@ -1255,8 +1263,11 @@ function updateDuel(dt){
 
   if(protoActive()){
     if(comboT>0) comboT-=dt;                              // dash→jump leap window
+    if(hitShake>0) hitShake=Math.max(0, hitShake-dt*60);  // impact shake decays
+    if(boss.kbX) boss.kbX *= Math.max(0,1-dt*9);          // boss recoil eases back
     // --- free lateral movement: walk while holding ◀/▶, dash on a double-tap, or ride an arced leap ---
-    if(dashT>0){ dashT-=dt; pikaDX += dashDir*DASH_SPEED*dt; pikaVX=0; }
+    if(knockT>0){ knockT-=dt; pikaDX += knockVX*dt; knockVX*=0.88; pikaVX=0; }   // knocked back by a hit
+    else if(dashT>0){ dashT-=dt; pikaDX += dashDir*DASH_SPEED*dt; pikaVX=0; }
     else if(player.air && leapVX){ pikaDX += leapVX*dt; }   // arced leap: horizontal travel through the jump
     else { const tv=moveDir*PIKA_WALK; pikaVX += (tv-pikaVX)*Math.min(1,dt*12); pikaDX += pikaVX*dt; }
     const minDX = ARENA_L-PLAYER_X, maxDX = (BOSS_X+(boss.sideX||0)-120)-PLAYER_X;   // approach the boss, don't overlap
@@ -2561,7 +2572,9 @@ function drawDuel(){
   drawZaps(); drawShots(); drawFoeShots();   // Pikachu's bolts/orbs + the boss's incoming blast
   // Earthquake shakes Ash + Pikachu (not the HUD): a decaying jitter
   const qs = quake ? (1-quake.t/quake.dur) : 0;
-  const qOn = qs>0; if(qOn){ g.save(); g.translate(Math.sin(performance.now()/27)*14*qs, Math.abs(Math.sin(performance.now()/16))*9*qs); }
+  const hs = hitShake||0;                                  // impact shake (decays in updateDuel)
+  const qOn = qs>0 || hs>0;
+  if(qOn){ g.save(); g.translate(Math.sin(performance.now()/27)*14*qs + (Math.random()-0.5)*hs, Math.abs(Math.sin(performance.now()/16))*9*qs + (Math.random()-0.5)*hs); }
   g.save(); if(protoActive()) g.translate(0,-duelLift()); drawAsh(); g.restore();   // trainer stands on the raised floor too
   const py = player.y + DUEL_PIKA_DROP - duelLift();   // duel: planted on the (possibly raised) floor line
   const sup = pikaCast && pikaCast.super;          // Thunderbolt super: bigger glow + shake, invulnerable
@@ -2719,7 +2732,7 @@ function drawBossSprite(){
   // only the lake foe (floating on water) and the air boss (hovering) bob vertically;
   // grounded bosses (dojo/grove/crystal) stand still — no Gyarados-style float.
   const bobAmp = boss.cfg.air ? 16 : (boss.cfg.duel==='lake' ? 8 : 0);
-  const cx=BOSS_X+slide+shake+(boss.sideX||0)+(boss.lungeX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*bobAmp-hov;   // sidestep+lunge x; hover lifts y
+  const cx=BOSS_X+slide+shake+(boss.sideX||0)+(boss.lungeX||0)+(boss.kbX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*bobAmp-hov;   // sidestep+lunge+recoil x; hover lifts y
   // Synthesis recover (grove): a pulsing green aura while it heals in place
   const synth = bossMode==='duel' && boss.cfg.duel==='grove' && boss.diveState!=='up';
   if(chg || synth){                                   // charging = golden; Synthesis = green
