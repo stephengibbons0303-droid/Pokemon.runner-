@@ -2838,8 +2838,6 @@ if(DEV && devSel){
   for(let i=0;i<LEVELS.length;i++) opt('play:'+i, 'Level '+(i+1)+' — play');
   for(let i=0;i<LEVELS.length;i++){ const b=BOSSES[i]||BOSSES[BOSSES.length-1];
     opt('boss:'+i, 'Level '+(i+1)+' boss — '+(b.name||'?')+(b.duel?' (duel)':'')); }
-  for(let i=0;i<LEVELS.length;i++){ const b=BOSSES[i]||BOSSES[BOSSES.length-1];
-    opt('scene:'+i, 'Scene preview — '+(DUEL_SCENE_BY_LEVEL[i]||'?')+' ('+(b.name||'?')+')'); }
   devSel.addEventListener('change', ()=>{ const v=devSel.value; devSel.value=''; devSel.blur();
     if(!v) return; const ix=v.indexOf(':'); devJump(v.slice(0,ix), +v.slice(ix+1)); });
 }
