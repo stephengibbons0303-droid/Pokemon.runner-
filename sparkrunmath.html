@@ -1042,15 +1042,17 @@ function applyPikaHit(m, dmg){
   if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; foeShots=[]; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); ashSay('ash_youdidit.mp3',1.0); }
 }
 function foeAttack(heavy){
-  const special = heavy || Math.random()<0.4;         // basic = quick/weaker, special = slower/stronger
+  // per-level difficulty (L1→L5): faster/harder-hitting, less reaction time, more specials. dl=0..4.
+  const dl=levelIdx, react=1-dl*0.07, cadence=1-dl*0.06;
+  const special = heavy || Math.random() < (0.35 + dl*0.05);   // L1 35% → L5 55% specials
   boss.atkKind = heavy?'heavy':(special?'special':'basic');
-  boss.atkDmg  = heavy?SUPER_DMG:(special?SPECIAL_DMG:BASIC_DMG);
+  boss.atkDmg  = Math.round((heavy?SUPER_DMG:(special?SPECIAL_DMG:BASIC_DMG)) * (1 + dl*0.06));   // L5 hits ~24% harder
   boss.atkArc  = Math.random()<0.45 ? 'high' : 'low'; // high = lobbed → roll aside (◀/▶); low = straight → jump (▲)
   boss.atk=0.6; flash={a:heavy?0.55:0.4, col: heavy?'#fff2a0':(special?'#7aa6ff':'#9fd8ff')};
   if(boss.cfg.roar2) voice(boss.cfg.roar2, heavy?0.95:0.7, 'foe');
   if(special && !heavy) ashWarn();                     // "Be careful, Pikachu!" on incoming specials (heavy warned at its charge)
-  const windup=(heavy?1.9:special?1.8:1.2)/boss.power; // heavy gives a touch more reaction time
-  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power;
+  const windup=(heavy?1.9:special?1.8:1.2)/boss.power*react; // higher levels give less time to react
+  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power*cadence;   // and attack more often
   bossMsg = heavy ? ('Here comes '+(boss.cfg.heavyName||'its heavy move')+' — DODGE!')
                   : special ? (boss.cfg.name+' charges a big attack!') : '';
   bossMsgT = heavy?1.6 : special?1.0 : 0;
@@ -1239,7 +1241,7 @@ function updateDuel(dt){
   } else if(!bossLunge && !quake){                             // hold off the next attack until a lunge/quake finishes
     foeTimer-=dt;
     if(foeTimer<=0){
-      if(boss.cfg.heavy && Math.random()<0.25) startHeavy();   // occasionally wind up the signature heavy
+      if(boss.cfg.heavy && Math.random() < (0.18 + levelIdx*0.03)) startHeavy();   // heavy more often at higher levels (L1 18% → L5 30%)
       else foeAttack();
     }
   }
@@ -2056,14 +2058,18 @@ function drawDex(){
     } else { g.strokeStyle='rgba(255,255,255,.12)'; g.lineWidth=2; rr(x,top,cw,ch,18); g.stroke(); }
 
     if(got){
-      drawMonInSlot(mon, cx, midY, 132, dexT + i*0.7);
+      const pcy=top+58;                                // portrait higher up to make room for the move list
+      drawMonInSlot(mon, cx, pcy, 96, dexT + i*0.7);
       const label = mon.name.length>12 ? mon.name.replace('Galarian ','G. ') : mon.name;
-      g.fillStyle=C.cream; g.font='600 18px Fredoka, sans-serif'; g.fillText(label, cx, top+ch-16);
+      g.fillStyle=C.cream; g.font='700 17px Fredoka, sans-serif'; g.fillText(label, cx, top+120);
+      // signature-move profile
+      g.font='500 12px Fredoka, sans-serif'; g.fillStyle='rgba(214,230,255,.8)';
+      (mon.moves||[]).slice(0,4).forEach((m,k)=> g.fillText(m.name, cx, top+140+k*15));
       if(isNew){
-        g.fillStyle=C.coral; g.font='700 18px Fredoka, sans-serif'; g.fillText('NEW!', cx, top+26);
+        g.fillStyle=C.coral; g.font='700 18px Fredoka, sans-serif'; g.fillText('NEW!', cx, top+24);
         for(let k=0;k<6;k++){                          // orbiting sparkles
-          const ang=dexT*2+k*Math.PI/3, rad=72+Math.sin(dexT*4+k)*6;
-          const px=cx+Math.cos(ang)*rad, py=midY+Math.sin(ang)*rad*0.62;
+          const ang=dexT*2+k*Math.PI/3, rad=60+Math.sin(dexT*4+k)*6;
+          const px=cx+Math.cos(ang)*rad, py=pcy+Math.sin(ang)*rad*0.62;
           g.globalAlpha=0.75; g.fillStyle=k%2?C.glow:C.spark; g.beginPath(); g.arc(px,py,3,0,7); g.fill();
         }
         g.globalAlpha=1;
