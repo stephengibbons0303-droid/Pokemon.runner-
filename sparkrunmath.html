@@ -1028,7 +1028,7 @@ function castMove(m){
 function applyPikaHit(m, dmg){
   const sup = dmg!=null;
   if(!canTarget()){ pikaFire(m); return; }            // he's already under/charging → whiff
-  if(!sup && Math.random()<0.28){                     // dodge: soar up (air), step aside, or submerge
+  if(!sup && Math.random() < (0.20 + levelIdx*0.10)){ // dodge chance climbs L1 20% → L5 60% (soar/sidestep/submerge)
     const ev=boss.cfg.evade;
     boss.evade={t:0,dur:ev==='soar'?0.6:ev==='sidestep'?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
     if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
@@ -1042,17 +1042,19 @@ function applyPikaHit(m, dmg){
   if(boss.hp<=0){ boss.defeated=true; boss.deadT=0; foeShots=[]; bossMsg=boss.cfg.name+' fainted!'; bossMsgT=2.4; if(boss.cfg.cry) voice(boss.cfg.cry,0.9,'foe'); ashSay('ash_youdidit.mp3',1.0); }
 }
 function foeAttack(heavy){
-  // per-level difficulty (L1→L5): faster/harder-hitting, less reaction time, more specials. dl=0..4.
-  const dl=levelIdx, react=1-dl*0.07, cadence=1-dl*0.06;
+  // per-level difficulty (L1→L5, dl=0..4). Tuned targets at L5: basic dodge window 0.4s,
+  // special window ~1.3s, attack cadence ~2s, damage ×2, 55% specials / 30% heavies.
+  const dl=levelIdx, react=1-dl*0.07, basicReact=1-dl*0.1667, cadence=1-dl*0.09375;
   const special = heavy || Math.random() < (0.35 + dl*0.05);   // L1 35% → L5 55% specials
   boss.atkKind = heavy?'heavy':(special?'special':'basic');
-  boss.atkDmg  = Math.round((heavy?SUPER_DMG:(special?SPECIAL_DMG:BASIC_DMG)) * (1 + dl*0.06));   // L5 hits ~24% harder
+  boss.atkDmg  = Math.round((heavy?SUPER_DMG:(special?SPECIAL_DMG:BASIC_DMG)) * (1 + dl*0.25));   // L5 hits ×2
   boss.atkArc  = Math.random()<0.45 ? 'high' : 'low'; // high = lobbed → roll aside (◀/▶); low = straight → jump (▲)
   boss.atk=0.6; flash={a:heavy?0.55:0.4, col: heavy?'#fff2a0':(special?'#7aa6ff':'#9fd8ff')};
   if(boss.cfg.roar2) voice(boss.cfg.roar2, heavy?0.95:0.7, 'foe');
   if(special && !heavy) ashWarn();                     // "Be careful, Pikachu!" on incoming specials (heavy warned at its charge)
-  const windup=(heavy?1.9:special?1.8:1.2)/boss.power*react; // higher levels give less time to react
-  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power*cadence;   // and attack more often
+  // basics shrink fastest (1.2s→0.4s); specials/heavies stay readable (~1.3s at L5)
+  const windup=(heavy ? 1.9*react : special ? 1.8*react : 1.2*basicReact)/boss.power;
+  dodgeWin=windup; dodgeMax=windup; foeTimer=(special?3.2:2.4)/boss.power*cadence;   // cadence → ~2s (special) at L5
   bossMsg = heavy ? ('Here comes '+(boss.cfg.heavyName||'its heavy move')+' — DODGE!')
                   : special ? (boss.cfg.name+' charges a big attack!') : '';
   bossMsgT = heavy?1.6 : special?1.0 : 0;
