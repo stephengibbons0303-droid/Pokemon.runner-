@@ -35,82 +35,59 @@ def sat_val(a):
     mx = a.max(2); mn = a.min(2)
     return (mx - mn), mx
 
-def sprite_blobs(a):
-    """Bounding boxes of the 4 sprites (biggest *saturated* blobs). Saturation cleanly
-    separates the cells; boxes are grown down in find_frames to recover the feet."""
-    sat, _ = sat_val(a)
-    m = ndimage.binary_dilation(sat > 55, iterations=14)
-    lab, n = ndimage.label(m)
-    sizes = ndimage.sum(np.ones_like(lab), lab, range(1, n + 1))
-    boxes = []
-    for idx in np.argsort(sizes)[::-1]:
-        if sizes[idx] < 0.01 * a.shape[0] * a.shape[1]:
-            break
-        ys, xs = np.where(lab == idx + 1)
-        boxes.append((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
-        if len(boxes) == 4:
-            break
-    return boxes
-
 def find_frames(a):
-    """Sprite bboxes in reading order (TL, TR, BL, BR), each grown DOWN to include the
-    dark feet — clamped within the cell's quadrant so it never crosses the divider."""
-    H, W = a.shape[:2]
-    boxes = sprite_blobs(a)
-    boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
-    ordered = sorted(boxes[:2], key=lambda b: b[0]) + sorted(boxes[2:], key=lambda b: b[0])
-    grown = []
-    for x0, y0, x1, y1 in ordered:
-        qbot = (H // 2) if (y0 + y1) / 2 < H / 2 else H
-        grown.append((x0, y0, x1, min(qbot - 8, y1 + FEET_PAD)))
-    return grown
+    """The 4 cells as quadrant boxes in reading order (TL, TR, BL, BR), inset to skip
+    the outer border and the centre divider. Moltres's FX (wind, vortices, bursts) is
+    huge and often dark/white, so a saturation blob box would crop the FX and bases —
+    we keep the whole cell and let the white flood-fill carve out only the sheet."""
+    H, W = a.shape[:2]; mx, my, o, c = W // 2, H // 2, 6, 8
+    return [(o, o, mx - c, my - c), (mx + c, o, W - o, my - c),
+            (o, my + c, mx - c, H - o), (mx + c, my + c, W - o, H - o)]
 
-def cutout(a, box, pad=10):
+def cutout(a, box):
+    """Carve one cell: edge-flood ONLY the near-pure-white sheet (tight threshold) so
+    pale wind/cloud FX survives, with NO global white key (which used to punch holes
+    through the body where white FX crossed it). Keep all remaining content; anchor on
+    the saturated body so frames align. Returns (rgba, body_cx, content_h, body_h)."""
     x0, y0, x1, y1 = box
-    x0 = max(0, x0 - pad); y0 = max(0, y0 - pad)
-    x1 = min(a.shape[1], x1 + pad); y1 = min(a.shape[0], y1 + pad)
     crop = a[y0:y1, x0:x1].astype(int)
     h, w, _ = crop.shape
     sat, val = sat_val(crop)
-    bglike = (np.abs(crop - WHITE).sum(2) < 60) | ((sat < 18) & (val > 232))
+    bglike = np.abs(crop - WHITE).sum(2) < 18              # ONLY the flat sheet (~252-255); pale FX (<=~248) survives
     seed = np.zeros((h, w), bool)
     seed[0] = seed[-1] = seed[:, 0] = seed[:, -1] = True
     seed &= bglike
-    fg = ~ndimage.binary_propagation(seed, mask=bglike)
-    fg &= ~(np.abs(crop - WHITE).sum(2) < 30)             # global pure-white key
-    dark = (val < 110) & (sat < 40)
-    linecol = dark.mean(0)
-    linerow = dark.mean(1)
-    edge = np.zeros(w, bool); edge[:max(1, int(w * 0.16))] = True; edge[int(w * 0.84):] = True
-    edgeR = np.zeros(h, bool); edgeR[:max(1, int(h * 0.16))] = True; edgeR[int(h * 0.84):] = True
-    fg[:, edge & (linecol > 0.6)] = False
-    fg[edgeR & (linerow > 0.6), :] = False
+    fg = ~ndimage.binary_propagation(seed, mask=bglike)    # everything not reachable-white from the border
     lab, n = ndimage.label(fg)
     keep = np.zeros_like(fg)
     for i in range(1, n + 1):
         comp = lab == i
         ys, xs = np.where(comp)
         bw = xs.max() - xs.min() + 1; bh = ys.max() - ys.min() + 1
-        if len(ys) < 0.004 * h * w:          continue
-        if min(bw, bh) <= 16 and max(bw, bh) >= 0.45 * max(h, w) and val[comp].mean() < 120 and sat[comp].mean() < 45:
-            continue
+        if len(ys) < 0.0006 * h * w:          continue     # tiny speck / jpeg noise
+        if min(bw, bh) <= 14 and max(bw, bh) >= 0.5 * max(h, w) and val[comp].mean() < 110 and sat[comp].mean() < 45:
+            continue                                        # thin, long, dark = a stray divider remnant
         keep |= comp
-    filled = ndimage.binary_fill_holes(keep)
+    filled = ndimage.binary_fill_holes(keep)                # fill only small interior holes
     holes = filled & ~keep
     hl, hn = ndimage.label(holes)
     for i in range(1, hn + 1):
         comp = hl == i
-        if comp.sum() < 0.0015 * h * w:
+        if comp.sum() < 0.0012 * h * w:
             keep |= comp
     fg = keep
     out = np.dstack([crop.astype(np.uint8), (fg * 255).astype(np.uint8)])
     ys, xs = np.where(fg)
-    out = out[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    return out, (xs.max() + xs.min()) / 2 - xs.min(), float(ys.max() - ys.min())
+    t, b, l, r = ys.min(), ys.max(), xs.min(), xs.max()
+    out = out[t:b + 1, l:r + 1]
+    body = fg & (sat > 55)                                  # the coloured body (pink flames + purple) for alignment
+    if body.any(): byc, bxc = np.where(body); cx = (bxc.min() + bxc.max()) / 2 - l; body_h = float(byc.max() - byc.min())
+    else:          cx = (l + r) / 2 - l; body_h = float(b - t)
+    return out, cx, float(b - t), body_h
 
 def build(frames, scale, ch, padx=PADX, padbot=PADBOT):
     sized = []
-    for rgba, cx, _ in frames:
+    for rgba, cx, _, _ in frames:
         im = Image.fromarray(rgba, 'RGBA')
         im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
         sized.append((im, cx * scale))
@@ -134,8 +111,10 @@ def main():
         sheets.append((key, label, frames))
     if not sheets:
         print('No sheets found in', SRC); return
-    scale = TARGET_BODY / np.median([fr[0][2] for _, _, fr in sheets])
-    ch = int(round(max(h for _, _, fr in sheets for _, _, h in fr) * scale)) + PADTOP + PADBOT
+    # scale from the prep-frame BODY height (frame 0, index 3) so Moltres is a consistent
+    # size across moves; cell height fits the tallest CONTENT (index 2 = incl. big FX).
+    scale = TARGET_BODY / np.median([fr[0][3] for _, _, fr in sheets])
+    ch = int(round(max(c_h for _, _, fr in sheets for _, _, c_h, _ in fr) * scale)) + PADTOP + PADBOT
     previews = []
     for key, label, frames in sheets:
         strip, cw = build(frames, scale, ch)
