@@ -419,6 +419,15 @@ const DODGE_DUR   = 0.5;                    // roll is a QUICK out-and-back: cle
 const DODGE_OUT   = 0.34, DODGE_HOLD = 0.5; // reach full extent by 34%, hold to 50%, then settle back by 100%
 const DUEL_HANG   = 0.14;                   // brief hover at the top of an up-dodge before it drops (timing matters)
 const PIKA_HIT_W = 38, PIKA_HIT_H = 50;     // Pikachu's body half-size for projectile contact (px) — any overlap = a hit
+// ---- Phase-1 movement prototype (duel only) ----
+const PROTO_MOVE = true;                    // master switch for the free-movement prototype
+const DUEL_SCALE = 0.58;                    // shrink the duelling actors so there's room to manoeuvre
+const PIKA_WALK  = 360;                     // walk speed while holding ◀/▶ (px/s)
+const DASH_SPEED = 1500, DASH_DUR = 0.16;   // double-tap dash: fast burst that STAYS put (no spring-back)
+const DOUBLE_TAP = 320;                     // ms window to register a double-tap dash
+const ARENA_L    = 56;                      // Pikachu's left bound (absolute x)
+const MELEE_RANGE = 210;                    // how close Pikachu must be to land a melee (Quick Attack)
+function protoActive(){ return PROTO_MOVE && boss && boss.cfg && boss.cfg.duel==='dojo'; }   // prototype is scoped to the Lucario dojo duel only
 // Which lane Pikachu counts as, from his y anchor. Rather than testing a single
 // point, we give him a vertical CATCH BAND (an area up his body, since his anchor
 // sits near his feet) and register the highest lane whose balloon band that catch
@@ -810,6 +819,8 @@ let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
 let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0, chargeT=0, tbCD=0;   // foe attack countdown, dodge window, move cooldown, energy-regen timer, Thunderbolt lockout
 let ashWarnCD=0;                                     // cooldown so Ash's "be careful!" warning doesn't spam
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
+let moveDir=0, pikaVX=0, dashT=0, dashDir=0;   // prototype: walk direction, lateral velocity, dash timer/direction
+let moveHolds={}, lastTap={dir:0,t:0};         // held movement controls (by pointer/key id) + double-tap detector
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
 const BASIC_DMG=10, SPECIAL_DMG=15, SUPER_DMG=30;    // % energy per hit; super = a charged signature move (Pikachu: Thunderbolt; bosses: their heavy)
 const duelDmg=m=> (m && m.kind==='basic') ? BASIC_DMG : SPECIAL_DMG;
@@ -935,6 +946,7 @@ function enterBoss(retry){
   const aBeat = f => ({ gap:0.35, fn:()=>{ ashShow('point',(PRE_DUR[f]||3.0)); return voice(f,1,'ash'); } });
   if(bossMode==='duel'){
     foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0; player.dodging=false;
+    moveDir=0; pikaVX=0; dashT=0; dashDir=0; moveHolds={}; lastTap={dir:0,t:0};   // reset prototype movement
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
@@ -1020,6 +1032,8 @@ function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.ev
 // tap a move: basic fires instantly, special winds up a moment first
 function castMove(m){
   if(castCD>0 || pikaCast || boss.defeated) return;
+  if(protoActive() && m.kind==='basic' && !inMeleeRange()){   // Quick Attack is melee — get close or it whiffs
+    Audio8.sfx('bad'); bossMsg='Too far — get closer! 👊'; bossMsgT=0.8; return; }
   if(charge < (m.cost||0)){ Audio8.sfx('bad'); bossMsg='Not enough energy! ⚡'; bossMsgT=0.7; return; }   // energy now gates duel moves
   if(m.key==='tb' && tbCD>0){ Audio8.sfx('bad'); bossMsg='Thunderbolt recharging…'; bossMsgT=0.7; return; }  // big nuke can't be chained
   charge=Math.max(0, Math.min(MAX_CHARGE, charge - (m.cost||0) + (m.gain||0)));   // spend/refund energy
@@ -1123,6 +1137,21 @@ function doDodge(dir){
   else { const d=(dir==='back'?-1:1); dodgeRoll={dir:d,t:0}; }    // a quick sideways roll (stays grounded)
   player.mood='happy'; player.moodT=0.4; Audio8.sfx('hop'); bossMsg='Dodge!'; bossMsgT=0.4;
 }
+// ---- prototype movement: hold ◀/▶ to walk, double-tap to dash, ▲ to hop ----
+function recomputeMoveDir(){ let d=0; for(const k in moveHolds) d+=moveHolds[k]; moveDir = d<0?-1 : d>0?1 : 0; }
+function startMoveHold(id,dir){
+  if(id in moveHolds) return;                          // already held (ignore key auto-repeat)
+  moveHolds[id]=dir; recomputeMoveDir();
+  const now=performance.now();
+  if(lastTap.dir===dir && now-lastTap.t<DOUBLE_TAP){ triggerDash(dir); lastTap.t=0; }   // 2nd tap → dash
+  else lastTap={dir,t:now};
+}
+function endMoveHold(id){ if(id in moveHolds){ delete moveHolds[id]; recomputeMoveDir(); } }
+function triggerDash(dir){ dashDir=dir; dashT=DASH_DUR; dodgeRoll={dir, t:0, dur:0.34};   // dash = quick roll that stays put
+  player.mood='happy'; player.moodT=0.3; Audio8.sfx('hop'); }
+function duelJump(){ if(player.air) return;            // a quick vertical hop (dodge over a low attack)
+  player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0; player.lane=2; player.targetY=LANE_Y[2]; Audio8.sfx('hop'); }
+function inMeleeRange(){ return Math.abs((PLAYER_X+pikaDX) - (BOSS_X+(boss.sideX||0))) < MELEE_RANGE; }
 // the boss's attack connects with Pikachu (shield soaks it, else energy + comeback check)
 function foeHit(){
   if(pikaCast && pikaCast.super){ bossMsg='Pikachu is charging — unhurt! ⚡'; bossMsgT=0.8; return; }   // invulnerable mid-Thunderbolt
@@ -1156,16 +1185,19 @@ function updateDuel(dt){
   if(boss.defeated) ashPose='punch';
   else if(ashPoseT>0){ ashPoseT-=dt; if(ashPoseT<=0) ashPose='ready'; }
   // sideways roll: a quick lunge out and back — Pikachu is only clear for a moment, so it must be timed to the hit
-  if(dodgeRoll){ dodgeRoll.t+=dt; const p=Math.min(1,dodgeRoll.t/DODGE_DUR);
-    let f; if(p<DODGE_OUT) f=Math.sin((p/DODGE_OUT)*(Math.PI/2));               // lunge out
-    else if(p<DODGE_HOLD) f=1;                                                  // brief full extent
-    else f=Math.cos(((p-DODGE_HOLD)/(1-DODGE_HOLD))*(Math.PI/2));               // settle back
-    pikaDX=f*dodgeRoll.dir*DODGE_REACH; if(p>=1){ dodgeRoll=null; pikaDX=0; } }
+  if(dodgeRoll){ dodgeRoll.t+=dt; const p=Math.min(1,dodgeRoll.t/(dodgeRoll.dur||DODGE_DUR));
+    if(!protoActive()){                                                            // (classic) roll owns pikaDX
+      let f; if(p<DODGE_OUT) f=Math.sin((p/DODGE_OUT)*(Math.PI/2));
+      else if(p<DODGE_HOLD) f=1;
+      else f=Math.cos(((p-DODGE_HOLD)/(1-DODGE_HOLD))*(Math.PI/2));
+      pikaDX=f*dodgeRoll.dir*DODGE_REACH; if(p>=1) pikaDX=0;
+    }
+    if(p>=1) dodgeRoll=null; }       // prototype: roll is animation-only; the dash impulse moves pikaDX
   // melee lunge: Pikachu darts toward the boss, connects at the apex, returns
   if(pikaLunge){ pikaLunge.t+=dt; const p=Math.min(1,pikaLunge.t/pikaLunge.dur);
-    pikaDX=Math.sin(p*Math.PI)*pikaLunge.reach;
+    if(!protoActive()) pikaDX=Math.sin(p*Math.PI)*pikaLunge.reach;                 // prototype: stay put, just play the dash sprite
     if(!pikaLunge.hit && p>=0.5){ pikaLunge.hit=true; bossImpact(); }
-    if(p>=1){ pikaLunge=null; pikaDX=0; } }
+    if(p>=1){ pikaLunge=null; if(!protoActive()) pikaDX=0; } }
   // an up-dodge hovers only briefly at the top, then drops — so the jump must be timed to the hit
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){
     player.dodgeHangT=(player.dodgeHangT||0)+dt;
@@ -1182,7 +1214,8 @@ function updateDuel(dt){
       const p=Math.min(1,s.t/s.dur), arc=s.arc||34;
       const px=s.x0+(s.x1-s.x0)*p, py=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // projectile's current point on its arc
       const cx=PLAYER_X+(pikaDX||0)+16, cy=player.y+DUEL_PIKA_DROP-14;                 // Pikachu's body centre right now
-      if(Math.abs(px-cx) < s.r+PIKA_HIT_W && Math.abs(py-cy) < s.r+PIKA_HIT_H){        // overlap → it connects
+      const hw=PIKA_HIT_W*(protoActive()?DUEL_SCALE:1), hh=PIKA_HIT_H*(protoActive()?DUEL_SCALE:1);   // hitbox tracks the shrunk actor
+      if(Math.abs(px-cx) < s.r+hw && Math.abs(py-cy) < s.r+hh){                        // overlap → it connects
         s.spent=true; dodgeWin=0; duelSplash(px,py,s.col); struck=true; return false;
       }
       if(p>=1){ s.spent=true; dodgeWin=0; duelSplash(s.x1,s.y1,s.col);                 // flew all the way past → clean dodge
@@ -1198,6 +1231,17 @@ function updateDuel(dt){
   // Pikachu energy regen (gates how often moves can fire) + Thunderbolt lockout
   if(tbCD>0) tbCD-=dt;
   chargeT+=dt; if(charge<MAX_CHARGE && chargeT>=1.4){ charge=Math.min(MAX_CHARGE, charge+1); chargeT=0; }
+
+  if(protoActive()){
+    // --- free lateral movement: walk while holding ◀/▶, dash on a double-tap (no spring-back) ---
+    if(dashT>0){ dashT-=dt; pikaDX += dashDir*DASH_SPEED*dt; pikaVX=0; }
+    else { const tv=moveDir*PIKA_WALK; pikaVX += (tv-pikaVX)*Math.min(1,dt*12); pikaDX += pikaVX*dt; }
+    const minDX = ARENA_L-PLAYER_X, maxDX = (BOSS_X+(boss.sideX||0)-120)-PLAYER_X;   // approach the boss, don't overlap
+    if(pikaDX<minDX){ pikaDX=minDX; pikaVX=0; dashT=0; }
+    if(pikaDX>maxDX){ pikaDX=maxDX; pikaVX=0; dashT=0; }
+    // --- boss paces forward/back so spacing matters (advance to threaten, retreat to fire) ---
+    boss.paceT=(boss.paceT||0)+dt; boss.sideX = -110 + Math.sin(boss.paceT*0.55)*150;
+  }
 
   // --- Earthquake: un-dodgeable. The field shakes (drawn elsewhere); the hit lands mid-quake. ---
   if(quake){
@@ -1433,16 +1477,28 @@ function pointInRect(r,px,py){ return px>=r.x&&px<=r.x+r.w&&py>=r.y&&py<=r.y+r.h
 function inGameplay(){ return state==='play'||state==='resolve'||state==='boss'; }
 function setPaused(p){ if(p===paused) return; paused=p; Audio8.pauseAudio(p); Audio8.sfx('select'); }
 
-function canvasPoint(e){
+function canvasXY(clientX,clientY){
   const r=cv.getBoundingClientRect();
-  const cx=(e.touches?e.touches[0].clientX:e.clientX), cy=(e.touches?e.touches[0].clientY:e.clientY);
-  // account for object-fit:contain letterboxing
-  const scale=Math.min(r.width/W, r.height/H);
+  const scale=Math.min(r.width/W, r.height/H);                  // object-fit:contain letterboxing
   const offX=(r.width - W*scale)/2, offY=(r.height - H*scale)/2;
-  return { x:(cx-r.left-offX)/scale, y:(cy-r.top-offY)/scale };
+  return { x:(clientX-r.left-offX)/scale, y:(clientY-r.top-offY)/scale };
+}
+function canvasPoint(e){ return canvasXY(e.touches?e.touches[0].clientX:e.clientX, e.touches?e.touches[0].clientY:e.clientY); }
+// prototype: during a live duel, controls support multitouch (hold to walk + tap to attack at the same time)
+function isDuelBattle(){ return protoActive() && !paused && state==='boss' && bossMode==='duel' && bossPhase==='battle' && boss && !boss.defeated; }
+function duelPress(id,x,y){
+  if(pointInMute(x,y)){ Audio8.cycleVol(); Audio8.sfx('select'); return; }
+  if(pointInRect(PAUSE,x,y)){ setPaused(!paused); return; }
+  for(const r of dodgeBtnRects()){ if(pointInRect(r,x,y)){ if(r.dir==='up') duelJump(); else startMoveHold(id, r.dir==='back'?-1:1); return; } }
+  for(const r of moveBarRects()){ if(pointInRect(r,x,y)){ castMove(r.m); return; } }
 }
 function onPress(e){
   e.preventDefault();
+  if(isDuelBattle()){                                           // multitouch duel controls
+    if(e.changedTouches){ for(const t of e.changedTouches){ const p=canvasXY(t.clientX,t.clientY); duelPress(t.identifier,p.x,p.y); } }
+    else { const p=canvasXY(e.clientX,e.clientY); duelPress('mouse',p.x,p.y); }
+    return;
+  }
   const p=canvasPoint(e);
   if(pointInMute(p.x,p.y)){ Audio8.cycleVol(); Audio8.sfx('select'); return; }   // full → low → mute → full
   if(state==='menu'){                                                              // start screen: gallery + pick a player
@@ -1477,6 +1533,10 @@ function onPress(e){
 }
 cv.addEventListener('mousedown',onPress);
 cv.addEventListener('touchstart',onPress,{passive:false});
+// prototype: release held movement when the finger/mouse lifts
+cv.addEventListener('touchend', e=>{ for(const t of e.changedTouches) endMoveHold(t.identifier); }, {passive:false});
+cv.addEventListener('touchcancel', e=>{ for(const t of e.changedTouches) endMoveHold(t.identifier); });
+window.addEventListener('mouseup', ()=> endMoveHold('mouse'));
 // laptop keys: ←/→ dodge roll, ↑/Space jump; Z X C V B = move 1..5 (cast in duel, equip in classic)
 const MOVE_KEYS={KeyZ:0,KeyX:1,KeyC:2,KeyV:3,KeyB:4};
 window.addEventListener('keydown',e=>{
@@ -1491,12 +1551,19 @@ window.addEventListener('keydown',e=>{
     }
     return;
   }
-  // directional dodge (any direction works) during the wind-up window
+  // prototype (Lucario dojo): hold ←/→ to walk (double-tap to dash), ↑/Space to hop
+  if(protoActive() && duel && bossPhase==='battle'){
+    if(e.code==='ArrowLeft'){ e.preventDefault(); if(!e.repeat) startMoveHold('kL',-1); return; }
+    if(e.code==='ArrowRight'){ e.preventDefault(); if(!e.repeat) startMoveHold('kR',1); return; }
+    if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); duelJump(); return; }
+  }
+  // classic duels: ←/→ dodge-roll during the wind-up window
   if(duel && dodgeWin>0 && (e.code==='ArrowLeft'||e.code==='ArrowRight')){ e.preventDefault(); doDodge(e.code==='ArrowLeft'?'back':'fwd'); return; }
   if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault();
     if(duel){ if(bossPhase==='intro'){ if(introReady) duelBegin(); else skipIntro(); } else if(dodgeWin>0) doDodge('up'); return; }
     hop(); }
 });
+window.addEventListener('keyup', e=>{ if(e.code==='ArrowLeft') endMoveHold('kL'); else if(e.code==='ArrowRight') endMoveHold('kR'); });
 
 /* ============================================================
    UPDATE
@@ -2453,6 +2520,8 @@ function drawDuel(){
   const py = player.y + DUEL_PIKA_DROP;   // duel: planted on the floor line
   const sup = pikaCast && pikaCast.super;          // Thunderbolt super: bigger glow + shake, invulnerable
   const shx = sup ? Math.sin(performance.now()/26)*5 : 0;
+  const pscale = protoActive();                          // prototype shrinks the actor (scaled around its feet)
+  if(pscale){ const fx=PLAYER_X+pikaDX+shx, fy=py+28; g.save(); g.translate(fx,fy); g.scale(DUEL_SCALE,DUEL_SCALE); g.translate(-fx,-fy); }
   if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=(sup?40:28)+p*(sup?46:30);   // charging glow on a special
     g.save(); g.globalAlpha=(sup?0.66:0.5)*Math.min(1,0.3+p); const gx=g.createRadialGradient(PLAYER_X+pikaDX+shx,py-6,4,PLAYER_X+pikaDX+shx,py-6,gr);
     gx.addColorStop(0, sup?'#fffbe0':'#fff7b0'); gx.addColorStop(0.5, sup?'rgba(255,225,74,.7)':'rgba(255,225,74,.5)'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
@@ -2462,6 +2531,7 @@ function drawDuel(){
   else if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, py)){}    // tumbling roll-dodge
   else drawCreature(PLAYER_X+pikaDX+shx, py, player.mood, true, true);   // crouched, planted (no sway)
+  if(pscale) g.restore();
   if(qOn) g.restore();      // end Earthquake shake (HUD/controls below stay steady)
   drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
   // controls (always on during battle): dodge arrows bottom-left, move buttons bottom-right
@@ -2485,12 +2555,15 @@ function drawRoll(x,y){
 }
 // big arrow dodge buttons (only during a wind-up); any one dodges
 function drawDodgeButtons(){
-  const armed = dodgeWin>0 && !player.dodging;                    // a foe attack is incoming and not yet dodged
-  const need = !armed ? [] : ['back','up','fwd'];                 // any direction dodges — light them all up
+  const proto = protoActive();
+  const armed = dodgeWin>0 && !player.dodging;                    // a foe attack is incoming
+  const need = !armed ? [] : ['back','up','fwd'];
   const pulse=0.6+0.4*Math.sin(performance.now()/100);
   for(const r of dodgeBtnRects()){
     const k=r.rad/50;                                    // scale glyph/label with the button size
-    const hot = armed && need.includes(r.dir);                   // light up only the right way to dodge
+    // prototype: ◀/▶ light up while held (walking); ▲ while airborne. Otherwise the incoming-attack cue.
+    const held = proto && ((r.dir==='back' && moveDir<0) || (r.dir==='fwd' && moveDir>0) || (r.dir==='up' && player.air));
+    const hot = proto ? held : (armed && need.includes(r.dir));
     g.save();
     g.globalAlpha = hot?1 : armed?0.55 : 0.5;
     g.beginPath(); g.arc(r.cx,r.cy,r.rad,0,7); g.fillStyle='rgba(20,14,36,.92)'; g.fill();
@@ -2500,7 +2573,7 @@ function drawDodgeButtons(){
     g.fillStyle='#fff'; g.font='700 '+Math.round(44*k)+'px Fredoka, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.fillText(r.glyph, r.cx, r.cy-4*k);
     g.font='700 '+Math.round(13*k)+'px Fredoka, sans-serif'; g.fillStyle=hot?'#cfe6ff':'#9fb2c8';
-    g.fillText(r.dir==='up'?'JUMP':'ROLL', r.cx, r.cy+r.rad-15*k);
+    g.fillText(r.dir==='up'?'JUMP':(proto?'MOVE':'ROLL'), r.cx, r.cy+r.rad-15*k);
     g.restore();
   }
 }
@@ -2624,6 +2697,7 @@ function drawBossSprite(){
   const aseq = (boss.atkSeq && boss.atkSeq.seq.ready) ? boss.atkSeq : null;   // animated special move
   const lungeSpr = (bossLunge && bossLunge.sprite && bossLunge.sprite.ready) ? bossLunge.sprite : null;   // melee charge body
   g.save(); g.globalAlpha=alpha; g.translate(cx,cy+sink); g.rotate(rot);
+  if(protoActive()){ g.translate(0,BOSS_H/2); g.scale(DUEL_SCALE,DUEL_SCALE); g.translate(0,-BOSS_H/2); }   // shrink around the feet
   if(boss.cfg.flip) g.scale(-1,1);   // mirror bosses whose art faces the wrong way (e.g. Lucario)
   if(lungeSpr){                      // Scizor charging in with the X-Scissor pose (the body IS the attack)
     const im=spr2d(lungeSpr), SH=BOSS_H*1.12, w=im.width*(SH/im.height);
@@ -2992,6 +3066,8 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+// PROTOTYPE: boot straight into the Lucario dojo duel (skip menu + intro) for playtesting movement
+if(PROTO_MOVE){ try{ devJump('boss',1); skipIntro(); duelBegin(); }catch(e){ console.warn('proto boot',e); } }
 </script>
 </body>
 </html>
