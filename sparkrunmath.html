@@ -200,7 +200,7 @@ const BOSSES = [
     ],
     moves:[
       { name:'Dragon Dance', file:'gyara_dragondance.png', proj:'gyara_proj_dd.png', col:'#b18cf0' },
-      { name:'Waterfall',    file:'gyara_waterfall.png',   col:'#5fb0e6' },
+      { name:'Waterfall',    file:'gyara_waterfall.png',   proj:'gyara_proj_wf.png', muzzle:'gyara_proj_wfb.png', col:'#5fb0e6', beam:true },
       { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a' },
       { name:'Ice Fang',     file:'gyara_icefang.png',     proj:'gyara_proj_if.png', col:'#9fe0ff', flip:true },
     ] },
@@ -851,7 +851,7 @@ function preloadBoss(i){
   if(b.file) bossSprite(b.file);
   if(b.hurtFile) bossSprite(b.hurtFile);
   (b.fly||[]).forEach(f=>bossSprite(f));
-  (b.moves||[]).forEach(m=>{ if(m.proj) bossSprite(m.proj); });
+  (b.moves||[]).forEach(m=>{ if(m.proj) bossSprite(m.proj); if(m.muzzle) bossSprite(m.muzzle); });
 }
 
 // dev-only: jump straight to a level's play section or its boss fight (see the
@@ -1066,7 +1066,8 @@ function bossFire(special, mv, heavy){
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
   const kind = boss.cfg.duel==='grove' ? 'leaf' : (boss.cfg.duel==='dojo' ? 'aura' : 'water');
   foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind, arc, heavy:!!heavy,
-    sprite: (mv&&mv.proj) ? bossSprite(mv.proj) : null, spin: !!(mv&&mv.spin), flip: !!(mv&&mv.flip), beam: !!(mv&&mv.beam) });
+    sprite: (mv&&mv.proj) ? bossSprite(mv.proj) : null, spin: !!(mv&&mv.spin), flip: !!(mv&&mv.flip), beam: !!(mv&&mv.beam),
+    muzzle: (mv&&mv.muzzle) ? bossSprite(mv.muzzle) : null });
 }
 // start charging the signature heavy move: ~2s glow + shake telegraph, invulnerable while charging
 function startHeavy(){
@@ -2583,6 +2584,16 @@ function drawBeam(s){
   g.drawImage(spr2d(s.sprite), 0, -h/2, len, h);                 // beam art stretched muzzle→tip
   g.restore();
 }
+// optional one-shot muzzle flourish at the attacker's mouth (e.g. Waterfall's curved
+// initial burst), fading out over the first ~45% of the shot.
+function drawMuzzle(s){
+  if(!(s.muzzle && s.muzzle.ready)) return;
+  const a=Math.max(0, 1 - Math.min(1,s.t/s.dur)/0.45); if(a<=0) return;
+  const im=spr2d(s.muzzle), h=(s.r||16)*3.4, w=im.width*(h/im.height);
+  g.save(); g.globalAlpha=a; g.translate(s.x0,s.y0); g.scale(-1,1);   // erupt toward Pikachu (boss fires left)
+  g.imageSmoothingEnabled=true; g.drawImage(im, -w*0.12, -h*0.72, w, h);
+  g.restore();
+}
 function drawShots(){
   const now=performance.now();
   shots.forEach(s=>{
@@ -2617,7 +2628,7 @@ function drawShots(){
 function drawFoeShots(){
   const now=performance.now();
   foeShots.forEach(s=>{
-    if(s.beam && s.sprite && s.sprite.ready){ drawBeam(s); return; }   // Flash Cannon beam
+    if(s.beam && s.sprite && s.sprite.ready){ drawBeam(s); drawMuzzle(s); return; }   // Flash Cannon / Waterfall beam
     const p=Math.min(1,s.t/s.dur), arc=s.arc||34;
     const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // arcs over toward Pikachu
     if(s.sprite && s.sprite.ready){                    // --- real projectile sprite ---

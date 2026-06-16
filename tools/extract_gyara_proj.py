@@ -18,7 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'tools', 'gyarados_sheets')
 SHEETS = [
     ('dragon_dance.png', 'dd', 'Dragon Dance'),
-    ('waterfall.png',    'wf', 'Waterfall'),
+    ('waterfall.png',    'wf', 'Waterfall jet'),
+    ('waterfall_burst.png','wfb','Waterfall burst'),
     ('ice_fang.png',     'if', 'Ice Fang'),
     ('earthquake.png',   'eq', 'Earthquake'),
 ]
