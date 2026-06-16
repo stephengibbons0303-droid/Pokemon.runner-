@@ -158,6 +158,7 @@ const BOSS_SEQ = {
   'gyara_dragondance.png':{ file:'gyara_seq_dd.png', cw:477, ch:436 },
   'gyara_waterfall.png':  { file:'gyara_seq_wf.png', cw:510, ch:510 },
   'gyara_icefang.png':    { file:'gyara_seq_if.png', cw:445, ch:247 },
+  'gyara_earthquake.png': { file:'gyara_seq_eq.png', cw:760, ch:474, n:3 },   // 3-frame shake (un-dodgeable quake)
   // Lucario move strips (4-frame sequences extracted from the supplied sheets)
   'luca_aurasphere.png':  { file:'luca_seq_as.png', cw:338, ch:305 },
   'luca_flashcannon.png': { file:'luca_seq_fc.png', cw:342, ch:305 },
@@ -179,7 +180,7 @@ const BOSS_SEQ = {
   'moltres_darkpulse.png':  { file:'moltres_seq_dp.png', cw:793, ch:467 },
   'moltres_hurricane.png':  { file:'moltres_seq_hr.png', cw:930, ch:467 },
 };
-for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
+for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=s.n||4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
 const HOVER_H = 110;                              // how high an 'air' boss (Moltres) floats above its perch
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
@@ -189,7 +190,7 @@ const BOSSES = [
     duel:'lake',                                  // L1 uses the no-math lair duel (lake scene)
     evade:'submerge', lowhp:'heal',               // slips under to dodge; dives to recover at low HP
     roar:'gyara_roar.mp3', cry:'gyara_cry.mp3', roar2:'gyara_roar2.mp3',
-    atkSeqs:['gyara_waterfall.png','gyara_icefang.png','gyara_dragondance.png'],   // specials cycled as attacks
+    atkSeqs:['gyara_waterfall.png','gyara_icefang.png','gyara_dragondance.png','gyara_earthquake.png'],   // specials cycled as attacks
     powerSeq:'gyara_dragondance.png',                      // also the dive-recover power-up flourish
     heavy:'gyara_waterfall.png', heavyName:'Waterfall',    // signature 30% move (charged, telegraphed)
     lines:[
@@ -201,7 +202,7 @@ const BOSSES = [
     moves:[
       { name:'Dragon Dance', file:'gyara_dragondance.png', proj:'gyara_proj_dd.png', col:'#b18cf0' },
       { name:'Waterfall',    file:'gyara_waterfall.png',   proj:'gyara_proj_wf.png', muzzle:'gyara_proj_wfb.png', col:'#5fb0e6', beam:true },
-      { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a' },
+      { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a', quake:true },   // un-dodgeable: shakes Ash+Pikachu, guaranteed hit
       { name:'Ice Fang',     file:'gyara_icefang.png',     proj:'gyara_proj_if.png', col:'#9fe0ff', flip:true },
     ] },
   { name:'Lucario',  file:'luca_idle.png',  tint:'#3f6fd0',
@@ -775,6 +776,7 @@ const SPEED_STREAK=5;                                 // correct answers in a ro
 let boss=null, bossChal=null, bossSpeed=140;          // end-of-level Pokémon battle
 let scenePreview=null;                                // dev-menu: show a duel scene before its combat is built
 let bossLunge=null;                                   // boss melee charge (e.g. Scizor X-Scissor): the body dashes in
+let quake=null;                                       // Earthquake: un-dodgeable screen-shake attack
 let zaps=[], bossMsg='', bossMsgT=0;                  // thunderbolt FX + on-screen call-outs
 let bossHold=0;                                      // pre-battle announcer hold before the first question
 let bossIntroQueue=[];                               // classic boss: announcer clips to play (in order) before the questions
@@ -836,7 +838,7 @@ function oopsPuff(x,y){
     stars.push({x,y:y-46,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-20,life:0.6,r:5+Math.random()*3,rot:Math.random()*6,vr:(Math.random()-0.5)*18,c:'#ffd23a'}); }
 }
 
-function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introState='idle'; introI=0; introBeats=[]; introCur=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
+function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=false; introState='idle'; introI=0; introBeats=[]; introCur=null; dlg=null; dodgeWin=0; dodgeRoll=null; pikaDX=0; pikaHP=100; pikaCast=null; levelIdx=0; stepInLvl=0; score=0; streak=0; hearts=3; prizes=[]; groundPlayer(); setSpeedMode(false); boss=null; bossChal=null; zaps=[]; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; quake=null; bossMsgT=0; bossCut=null; moveIdx=0; equipped='tb'; pikaAtk=null; pikaShield=0; charge=2; }
 
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
@@ -906,7 +908,7 @@ function enterBoss(retry){
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, sideX:0, lungeX:0, hoverY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
          evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0, charging:null };   // + special-move / charge state
-  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; pikaDX=0;
+  bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; quake=null; pikaDX=0;
   preloadBoss(levelIdx);                                   // idle + reaction + hover-flap + projectile art (no pop-in)
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
@@ -1049,6 +1051,11 @@ function foeAttack(heavy){
   if(!mv && !heavy){ const pool=(boss.cfg.moves||[]).filter(m=>m.proj && (boss.cfg.atkSeqs||[]).includes(m.file)); if(pool.length) mv=pick(pool); }
   if(heavy && mv && mv.lunge){                           // melee charge (Scizor X-Scissor): the body IS the attack
     bossLunge={ sprite: mv.proj ? bossSprite(mv.proj) : null, reach: Math.max(140, (BOSS_X-PLAYER_X)-210), back:0 };
+  } else if(mv && mv.quake){                             // Earthquake: un-dodgeable — shake the field, guaranteed hit
+    const sq=BOSS_SEQ[mv.file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:1.5};   // boss's shake animation
+    quake={t:0, dur:1.7, hit:false};
+    dodgeWin=0; dodgeMax=0;                               // no dodge window
+    bossMsg=boss.cfg.name+' uses Earthquake — no escape! 〰️'; bossMsgT=1.7;
   } else {
     const seqFile = file || (mv && mv.file);             // animate the cast strip on basics too (boss isn't static while attacking)
     if(seqFile){ const sq=BOSS_SEQ[seqFile]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }
@@ -1139,6 +1146,13 @@ function updateDuel(dt){
   foeShots=foeShots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; } return true; });
   if(bossPhase!=='battle' || boss.defeated) return;
 
+  // --- Earthquake: un-dodgeable. The field shakes (drawn elsewhere); the hit lands mid-quake. ---
+  if(quake){
+    quake.t+=dt;
+    if(!quake.hit && quake.t>=quake.dur*0.55){ quake.hit=true; foeHit(); if(state==='over'){ quake=null; return; } }
+    if(quake.t>=quake.dur) quake=null;
+  }
+
   // --- boss melee charge (Scizor X-Scissor): accelerate in during the wind-up, strike as the
   //     window closes, then retreat. dodgeWin/foeHit (below) still resolve the dodge. ---
   if(bossLunge){
@@ -1212,7 +1226,7 @@ function updateDuel(dt){
   if(dodgeWin>0){
     dodgeWin-=dt;
     if(dodgeWin<=0){ foeHit(); if(state==='over') return; }   // window closed without a dodge → it connects
-  } else if(!bossLunge){                                       // hold off the next attack until a lunge finishes retreating
+  } else if(!bossLunge && !quake){                             // hold off the next attack until a lunge/quake finishes
     foeTimer-=dt;
     if(foeTimer<=0){
       if(boss.cfg.heavy && Math.random()<0.25) startHeavy();   // occasionally wind up the signature heavy
@@ -2342,6 +2356,9 @@ function drawDuel(){
   }
   if(dodgeWin>0) drawDodgeWave();
   drawZaps(); drawShots(); drawFoeShots();   // Pikachu's bolts/orbs + the boss's incoming blast
+  // Earthquake shakes Ash + Pikachu (not the HUD): a decaying jitter
+  const qs = quake ? (1-quake.t/quake.dur) : 0;
+  const qOn = qs>0; if(qOn){ g.save(); g.translate(Math.sin(performance.now()/27)*14*qs, Math.abs(Math.sin(performance.now()/16))*9*qs); }
   drawAsh();                // trainer on the bank
   const py = player.y + DUEL_PIKA_DROP;   // duel: planted on the floor line
   const sup = pikaCast && pikaCast.super;          // Thunderbolt super: bigger glow + shake, invulnerable
@@ -2355,6 +2372,7 @@ function drawDuel(){
   else if(pikaAtk && pikaAtk.spr && pikaAtk.spr.ready) drawPikaAttack();
   else if(dodgeRoll && roll.ready && drawRoll(PLAYER_X+pikaDX, py)){}    // tumbling roll-dodge
   else drawCreature(PLAYER_X+pikaDX+shx, py, player.mood, true, true);   // crouched, planted (no sway)
+  if(qOn) g.restore();      // end Earthquake shake (HUD/controls below stay steady)
   drawDuelBars();           // Pikachu energy (left) + Gyarados energy (right)
   // controls (always on during battle): dodge arrows bottom-left, move buttons bottom-right
   if(bossPhase==='battle'){ drawDodgeButtons(); drawMoveBar(); }
