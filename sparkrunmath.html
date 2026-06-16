@@ -3079,7 +3079,14 @@ function frame(now){
 }
 requestAnimationFrame(frame);
 // PROTOTYPE: boot straight into the Lucario dojo duel (skip menu + intro) for playtesting movement
-if(PROTO_MOVE){ try{ devJump('boss',1); skipIntro(); duelBegin(); }catch(e){ console.warn('proto boot',e); } }
+if(PROTO_MOVE){ try{ devJump('boss',1); skipIntro(); duelBegin(); }catch(e){ console.warn('proto boot',e); }
+  // floating snapshot button (DOM element → never appears in the saved PNG)
+  const snap=document.createElement('button');
+  snap.textContent='📷'; snap.title='Save a PNG screenshot of the game';
+  snap.style.cssText='position:fixed;left:8px;top:8px;z-index:60;font-size:18px;line-height:1;padding:5px 8px;border-radius:9px;border:2px solid #9fd8ff;background:rgba(20,14,36,.8);color:#fff;cursor:pointer;opacity:.85;';
+  snap.addEventListener('click', ()=>{ try{ const a=document.createElement('a'); a.download='pokemon-duel-'+Date.now()+'.png'; a.href=cv.toDataURL('image/png'); a.click(); }catch(e){ alert('Snapshot failed: '+e.message); } });
+  document.body.appendChild(snap);
+}
 </script>
 </body>
 </html>
