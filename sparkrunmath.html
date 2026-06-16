@@ -800,7 +800,7 @@ let bossPhase='';              // duel: 'intro' (scripted) | 'battle'
 let introReady=false, introBeats=[], introI=0, introState='idle';   // intro cutscene: beats chained on audio completion
 let introWaitT=0, introMax=0, introGapAfter=0, introEnded=true, introCur=null;
 let dlg=null, dlgIdx=0;        // (legacy dialogue, unused)
-let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0;   // foe attack countdown, open dodge window (+ its length), move cooldown
+let foeTimer=0, dodgeWin=0, dodgeMax=1.3, castCD=0, chargeT=0, tbCD=0;   // foe attack countdown, dodge window, move cooldown, energy-regen timer, Thunderbolt lockout
 let ashWarnCD=0;                                     // cooldown so Ash's "be careful!" warning doesn't spam
 let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x offset during it
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
@@ -914,7 +914,7 @@ function enterBoss(retry){
   const cfg=BOSSES[levelIdx]||BOSSES[BOSSES.length-1];
   bossMode = cfg.duel ? 'duel' : 'classic';
   scenePreview=null;                                  // a real fight never inherits a dev scene preview
-  const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
+  const hp = cfg.duel ? (100 + levelIdx*30) : (4+levelIdx*3);   // duel 0-100% bar, but later bosses take more hits (L1 100 → L5 220)
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
          subY:0, sideX:0, lungeX:0, hoverY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
          evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0, charging:null };   // + special-move / charge state
@@ -927,7 +927,7 @@ function enterBoss(retry){
   const vs  = retry ? null : (BOSS_VS_CLIP[cfg.name] || null);
   const aBeat = f => ({ gap:0.35, fn:()=>{ ashShow('point',(PRE_DUR[f]||3.0)); return voice(f,1,'ash'); } });
   if(bossMode==='duel'){
-    foeTimer=2.6; dodgeWin=0; castCD=0; dodgeRoll=null; pikaDX=0;
+    foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0;
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
@@ -1013,14 +1013,18 @@ function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.ev
 // tap a move: basic fires instantly, special winds up a moment first
 function castMove(m){
   if(castCD>0 || pikaCast || boss.defeated) return;
+  if(charge < (m.cost||0)){ Audio8.sfx('bad'); bossMsg='Not enough energy! ⚡'; bossMsgT=0.7; return; }   // energy now gates duel moves
+  if(m.key==='tb' && tbCD>0){ Audio8.sfx('bad'); bossMsg='Thunderbolt recharging…'; bossMsgT=0.7; return; }  // big nuke can't be chained
+  charge=Math.max(0, Math.min(MAX_CHARGE, charge - (m.cost||0) + (m.gain||0)));   // spend/refund energy
+  const cdMul=1+levelIdx*0.1;                          // Pikachu attacks slower at higher levels (+40% by L5)
   equipped=m.key; player.mood='happy'; player.moodT=0.5;
   if(m.key==='tb'){                                   // Thunderbolt = charged SUPER: longer wind-up,
-    pikaCast={m, t:0, windup:1.6, super:true};        // Pikachu glows & shakes and can't be hurt, hits for 30%
+    pikaCast={m, t:0, windup:1.6, super:true}; tbCD=4.0; // Pikachu glows & shakes and can't be hurt, hits for 30%
     voice(PIKA_VOICE,0.8,'pika'); bossMsg='Pikachu charges Thunderbolt! ⚡'; bossMsgT=1.6;
   } else if(m.kind==='special' || m.kind===undefined){  // special = slower build-up, more damage
     pikaCast={m, t:0, windup:0.55}; voice(PIKA_VOICE,0.7,'pika'); bossMsg=m.name+'…'; bossMsgT=0.6;
   } else {                                            // basic = quick, less damage
-    applyPikaHit(m); Audio8.sfx('good'); castCD=0.42;
+    applyPikaHit(m); Audio8.sfx('good'); castCD=0.42*cdMul;
   }
 }
 // resolve a Pikachu hit (after the wind-up for specials) — Gyarados may submerge to dodge.
@@ -1154,11 +1158,15 @@ function updateDuel(dt){
   // let a dodge-hop fall back down once it has peaked
   if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){ player.targetY=LANE_Y[0]; player.lane=0; }
   // resolve a special move once its wind-up finishes
-  if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const c=pikaCast; pikaCast=null; applyPikaHit(c.m, c.super?SUPER_DMG:null); Audio8.sfx(c.super?'win':'good'); castCD=c.super?0.7:0.5; } }
+  if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const c=pikaCast; pikaCast=null; applyPikaHit(c.m, c.super?SUPER_DMG:null); Audio8.sfx(c.super?'win':'good'); castCD=(c.super?0.7:0.5)*(1+levelIdx*0.1); } }
   if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
   // the boss's attack travelling to Pikachu → splashes on arrival
   foeShots=foeShots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; } return true; });
   if(bossPhase!=='battle' || boss.defeated) return;
+
+  // Pikachu energy regen (gates how often moves can fire) + Thunderbolt lockout
+  if(tbCD>0) tbCD-=dt;
+  chargeT+=dt; if(charge<MAX_CHARGE && chargeT>=1.4){ charge=Math.min(MAX_CHARGE, charge+1); chargeT=0; }
 
   // --- Earthquake: un-dodgeable. The field shakes (drawn elsewhere); the hit lands mid-quake. ---
   if(quake){
@@ -2364,8 +2372,8 @@ function drawAsh(){
   g.restore();
 }
 // a labelled energy bar; turns red when critical (≤10%). right=true anchors the fill to the right.
-function drawEnergyBar(x,y,w,label,hp,colA,colB,right){
-  const frac=Math.max(0,Math.min(1,hp/100)), crit=hp<=10;
+function drawEnergyBar(x,y,w,label,hp,colA,colB,right,max){
+  max=max||100; const frac=Math.max(0,Math.min(1,hp/max)), crit=hp/max<=0.1;
   g.save();
   g.fillStyle='rgba(20,14,36,.82)'; rr(x-4,y-4,w+8,26,8); g.fill();
   g.fillStyle='rgba(0,0,0,.5)'; rr(x,y,w,18,6); g.fill();
@@ -2380,7 +2388,7 @@ function drawEnergyBar(x,y,w,label,hp,colA,colB,right){
 function drawDuelBars(){
   // y=90 keeps the bars clear of the pause/speaker buttons (which occupy y≈18–78 top-right)
   drawEnergyBar(16, 90, 300, 'PIKACHU', pikaHP, '#ffe14a', '#caa400', false);
-  drawEnergyBar(W-316, 90, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
+  drawEnergyBar(W-316, 90, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true, boss.maxHp);
 }
 function drawDuel(){
   const sc = boss.cfg.duel || scenePreview;   // scenePreview lets the dev menu show a scene before its duel is built
@@ -2763,11 +2771,11 @@ function drawChargeGauge(x,y){
 function drawMoveBar(){
   g.save();
   const duel = bossMode==='duel', KEYS=['Z','X','C','V','B'];
-  if(!duel) drawChargeGauge(14, H-54);                  // duel uses energy bars, not the charge meter
+  drawChargeGauge(duel?16:14, duel?128:H-54);           // energy meter (under Pikachu's bar in a duel)
   const rects=moveBarRects();
   for(let ki=0; ki<rects.length; ki++){
     const r=rects[ki], m=r.m, sel=(m.key===equipped), cx=r.cx, cy=r.cy, rad=r.rad, k=rad/47;
-    const aff = duel ? !(castCD>0||pikaCast) : canCast(m);   // duel: dimmed only while on cooldown / winding up
+    const aff = duel ? (!(castCD>0||pikaCast) && charge>=(m.cost||0) && !(m.key==='tb'&&tbCD>0)) : canCast(m);   // gated by cooldown + energy + Thunderbolt lockout
     g.globalAlpha = aff?1:0.45;
     // base disc
     g.beginPath(); g.arc(cx,cy,rad,0,7); g.fillStyle=sel?'rgba(48,32,72,.98)':'rgba(24,16,40,.9)'; g.fill();
