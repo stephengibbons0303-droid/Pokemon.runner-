@@ -415,9 +415,8 @@ const JUMP_GRAV = 3400;                    // downward acceleration (px/s²) —
 // Duel dodge feel: a side-step lunges out, holds clear of the attack, then settles back;
 // an up-dodge is a big hop with a brief hover. (Bigger / slower than the old quick bounce.)
 const DODGE_REACH = 168;                   // how far Pikachu lunges sideways on a roll-dodge (px)
-const DODGE_DUR   = 0.78;                   // roll-dodge length: dash out → hold → settle back (s)
-const DODGE_OUT   = 0.24, DODGE_HOLD = 0.6; // roll phases: reach full extent by 24%, hold until 60%, then return
-const DUEL_HANG   = 0.26;                   // hover time at the top of an up-dodge before dropping (s)
+const DODGE_RAMP  = 0.18, DODGE_BACK = 0.26; // roll: lunge out in 0.18s, then settle back over 0.26s once the attack passes
+const PIKA_HIT_W = 38, PIKA_HIT_H = 50;     // Pikachu's body half-size for projectile contact (px) — any overlap = a hit
 // Which lane Pikachu counts as, from his y anchor. Rather than testing a single
 // point, we give him a vertical CATCH BAND (an area up his body, since his anchor
 // sits near his feet) and register the highest lane whose balloon band that catch
@@ -933,7 +932,7 @@ function enterBoss(retry){
   const vs  = retry ? null : (BOSS_VS_CLIP[cfg.name] || null);
   const aBeat = f => ({ gap:0.35, fn:()=>{ ashShow('point',(PRE_DUR[f]||3.0)); return voice(f,1,'ash'); } });
   if(bossMode==='duel'){
-    foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0;
+    foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0; player.dodging=false;
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
@@ -1058,7 +1057,8 @@ function foeAttack(heavy){
   const special = heavy || Math.random() < (0.35 + dl*0.05);   // L1 35% → L5 55% specials
   boss.atkKind = heavy?'heavy':(special?'special':'basic');
   boss.atkDmg  = Math.round((heavy?SUPER_DMG:(special?SPECIAL_DMG:BASIC_DMG)) * (1 + dl*0.25));   // L5 hits ×2
-  boss.atkArc  = Math.random()<0.45 ? 'high' : 'low'; // high = lobbed → roll aside (◀/▶); low = straight → jump (▲)
+  boss.atkArc  = Math.random()<0.45 ? 'high' : 'low'; // high = lobbed (arcs down), low = straight — both dodgeable any way
+  boss.atkMode='proj'; player.dodging=false;          // default: a projectile (resolves on contact); reset the dodge lock
   boss.atk=0.6; flash={a:heavy?0.55:0.4, col: heavy?'#fff2a0':(special?'#7aa6ff':'#9fd8ff')};
   if(boss.cfg.roar2) voice(boss.cfg.roar2, heavy?0.95:0.7, 'foe');
   if(special && !heavy) ashWarn();                     // "Be careful, Pikachu!" on incoming specials (heavy warned at its charge)
@@ -1074,8 +1074,10 @@ function foeAttack(heavy){
   // basics still throw a real projectile (one of the cycled attack moves with art)
   if(!mv && !heavy){ const pool=(boss.cfg.moves||[]).filter(m=>m.proj && (boss.cfg.atkSeqs||[]).includes(m.file)); if(pool.length) mv=pick(pool); }
   if(heavy && mv && mv.lunge){                           // melee charge (Scizor X-Scissor): the body IS the attack
+    boss.atkMode='lunge';
     bossLunge={ sprite: mv.proj ? bossSprite(mv.proj) : null, reach: Math.max(140, (BOSS_X-PLAYER_X)-210), back:0 };
   } else if(mv && mv.quake){                             // Earthquake: un-dodgeable — shake the field, guaranteed hit
+    boss.atkMode='quake';
     const sq=BOSS_SEQ[mv.file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:1.5};   // boss's shake animation
     quake={t:0, dur:1.7, hit:false};
     dodgeWin=0; dodgeMax=0;                               // no dodge window
@@ -1096,7 +1098,7 @@ function bossFire(special, mv, heavy){
   const col = (mv && mv.col) || DUEL_FIRE_COL[boss.cfg.duel] || '#5fb0e6';
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
   const kind = boss.cfg.duel==='grove' ? 'leaf' : (boss.cfg.duel==='dojo' ? 'aura' : 'water');
-  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind, arc, heavy:!!heavy,
+  foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind, arc, heavy:!!heavy, threat:true,
     sprite: (mv&&mv.proj) ? bossSprite(mv.proj) : null, spin: !!(mv&&mv.spin), flip: !!(mv&&mv.flip), beam: !!(mv&&mv.beam),
     muzzle: (mv&&mv.muzzle) ? bossSprite(mv.muzzle) : null });
 }
@@ -1108,18 +1110,17 @@ function startHeavy(){
   ashWarn();                                           // Ash warns during the heavy's wind-up
   bossMsg=boss.cfg.name+' powers up — '+(boss.cfg.heavyName||'heavy move')+'!'; bossMsgT=2.0;
 }
-// directional dodge: a LOW attack must be JUMPED (▲); a HIGH lobbed attack must be
-// ROLLED aside (◀/▶). The wrong move (or none) lets the hit land.
+// dodge in any direction — roll aside (◀/▶) or hop up (▲). The hit is no longer decided
+// by which button: the projectile resolves on actual CONTACT, so you must physically move
+// Pikachu's body clear of it in time. Move too little or too late and it still connects.
 function doDodge(dir){
-  if(dodgeWin<=0) return;
+  if(dodgeWin<=0 || player.dodging) return;           // one committed dodge per incoming attack
   if(pikaCast && !pikaCast.super) return;             // committed to a normal special → can't dodge (it'll connect)
-  const needRoll = boss.atkArc==='high';
-  const correct = needRoll ? (dir==='back'||dir==='fwd') : (dir==='up');
-  dodgeWin=0; player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0;
-  if(dir==='up'){ player.lane=2; player.targetY=LANE_Y[2]; }      // up = a big hop to the high lane (was a small mid-lane bounce)
-  else { const d=(dir==='back'?-1:1); dodgeRoll={dir:d,t:0,dur:DODGE_DUR}; player.targetY=LANE_Y[1]; }
-  if(correct){ player.mood='happy'; player.moodT=0.4; Audio8.sfx('hop'); bossMsg = needRoll?'Rolled clear!':'Jumped clear!'; bossMsgT=0.7; }
-  else { foeHit(); if(state!=='over'){ bossMsg='Wrong way!'; bossMsgT=0.8; } }   // mis-dodge → it connects
+  player.dodging=true;
+  player.air=true; player.reachedApex=false; player.jumpT=0;
+  if(dir==='up'){ player.lane=2; player.targetY=LANE_Y[2]; }      // up = a big hop to the high lane
+  else { const d=(dir==='back'?-1:1); dodgeRoll={dir:d,t:0}; player.targetY=LANE_Y[1]; }
+  player.mood='happy'; player.moodT=0.4; Audio8.sfx('hop'); bossMsg='Dodging!'; bossMsgT=0.5;
 }
 // the boss's attack connects with Pikachu (shield soaks it, else energy + comeback check)
 function foeHit(){
@@ -1153,27 +1154,40 @@ function updateDuel(dt){
   // Ash pose: punch on victory, else revert to ready after a momentary pose
   if(boss.defeated) ashPose='punch';
   else if(ashPoseT>0){ ashPoseT-=dt; if(ashPoseT<=0) ashPose='ready'; }
-  // sideways roll-hop: dash out, hold clear of the attack, then settle back (no instant snap-back)
-  if(dodgeRoll){ dodgeRoll.t+=dt; const p=Math.min(1,dodgeRoll.t/dodgeRoll.dur);
-    let f; if(p<DODGE_OUT) f=Math.sin((p/DODGE_OUT)*(Math.PI/2));                 // lunge out (ease-out)
-    else if(p<DODGE_HOLD) f=1;                                                    // hold at full extent
-    else f=Math.cos(((p-DODGE_HOLD)/(1-DODGE_HOLD))*(Math.PI/2));                 // ease back to centre
-    pikaDX=f*dodgeRoll.dir*DODGE_REACH; if(p>=1){ dodgeRoll=null; pikaDX=0; } }
+  // sideways roll: lunge out and STAY clear while the attack is live, then settle back once it has passed
+  if(dodgeRoll){ dodgeRoll.t+=dt;
+    if(dodgeWin>0){ const out=Math.min(1,dodgeRoll.t/DODGE_RAMP); pikaDX=Math.sin(out*Math.PI/2)*dodgeRoll.dir*DODGE_REACH; }
+    else { dodgeRoll.rt=(dodgeRoll.rt||0)+dt; const b=Math.min(1,dodgeRoll.rt/DODGE_BACK);
+           pikaDX=Math.cos(b*Math.PI/2)*dodgeRoll.dir*DODGE_REACH; if(b>=1){ dodgeRoll=null; pikaDX=0; } } }
   // melee lunge: Pikachu darts toward the boss, connects at the apex, returns
   if(pikaLunge){ pikaLunge.t+=dt; const p=Math.min(1,pikaLunge.t/pikaLunge.dur);
     pikaDX=Math.sin(p*Math.PI)*pikaLunge.reach;
     if(!pikaLunge.hit && p>=0.5){ pikaLunge.hit=true; bossImpact(); }
     if(p>=1){ pikaLunge=null; pikaDX=0; } }
-  // let an up-dodge hover briefly at the top, then fall back down
-  if(player.air && player.reachedApex && player.targetY!==LANE_Y[0]){
-    player.dodgeHangT=(player.dodgeHangT||0)+dt;
-    if(player.dodgeHangT>=DUEL_HANG){ player.targetY=LANE_Y[0]; player.lane=0; }
-  }
+  // an up-dodge hovers at the top while the attack is live, then drops once it has passed
+  if(player.air && player.reachedApex && player.targetY!==LANE_Y[0] && dodgeWin<=0){ player.targetY=LANE_Y[0]; player.lane=0; }
   // resolve a special move once its wind-up finishes
   if(pikaCast){ pikaCast.t+=dt; if(pikaCast.t>=pikaCast.windup){ const c=pikaCast; pikaCast=null; applyPikaHit(c.m, c.super?SUPER_DMG:null); Audio8.sfx(c.super?'win':'good'); castCD=(c.super?0.7:0.5)*(1+levelIdx*0.1); } }
   if(boss.atkSeq){ boss.atkSeq.t+=dt; if(boss.atkSeq.t>=boss.atkSeq.dur) boss.atkSeq=null; }   // boss move animation
   // the boss's attack travelling to Pikachu → splashes on arrival
-  foeShots=foeShots.filter(s=>{ s.t+=dt; if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; } return true; });
+  let struck=false;                                      // a threat connected this frame (resolve AFTER the filter,
+  foeShots=foeShots.filter(s=>{                           //   so foeHit→enterBoss can safely clear foeShots)
+    s.t+=dt;
+    if(s.threat && !s.spent){                            // a live foe attack: contact with Pikachu anywhere = a hit
+      const p=Math.min(1,s.t/s.dur), arc=s.arc||34;
+      const px=s.x0+(s.x1-s.x0)*p, py=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // projectile's current point on its arc
+      const cx=PLAYER_X+(pikaDX||0)+16, cy=player.y+DUEL_PIKA_DROP-14;                 // Pikachu's body centre right now
+      if(Math.abs(px-cx) < s.r+PIKA_HIT_W && Math.abs(py-cy) < s.r+PIKA_HIT_H){        // overlap → it connects
+        s.spent=true; dodgeWin=0; duelSplash(px,py,s.col); struck=true; return false;
+      }
+      if(p>=1){ s.spent=true; dodgeWin=0; duelSplash(s.x1,s.y1,s.col);                 // flew all the way past → clean dodge
+        if(state!=='over'){ bossMsg='Dodged! ✨'; bossMsgT=0.7; } return false; }
+      return true;
+    }
+    if(s.t>=s.dur){ duelSplash(s.x1,s.y1,s.col); return false; }
+    return true;
+  });
+  if(struck){ foeHit(); if(state==='over') return; }
   if(bossPhase!=='battle' || boss.defeated) return;
 
   // Pikachu energy regen (gates how often moves can fire) + Thunderbolt lockout
@@ -1259,7 +1273,15 @@ function updateDuel(dt){
   // --- normal attack cadence + dodge window ---
   if(dodgeWin>0){
     dodgeWin-=dt;
-    if(dodgeWin<=0){ foeHit(); if(state==='over') return; }   // window closed without a dodge → it connects
+    if(dodgeWin<=0){
+      // projectile attacks are resolved on contact above; only the projectile-less melee
+      // charge resolves here — by position: it connects unless Pikachu physically moved clear.
+      if(boss.atkMode==='lunge'){
+        const clear = Math.abs(pikaDX)>90 || (LANE_Y[0]-player.y)>120;
+        if(!clear) foeHit(); else if(state!=='over'){ bossMsg='Dodged! ✨'; bossMsgT=0.7; }
+      }
+      if(state==='over') return;
+    }
   } else if(!bossLunge && !quake){                             // hold off the next attack until a lunge/quake finishes
     foeTimer-=dt;
     if(foeTimer<=0){
@@ -2363,7 +2385,7 @@ function drawDuelIntro(){
 }
 function drawDodgePrompt(){
   const a=0.55+0.45*Math.sin(performance.now()/90);
-  const cue = boss.atkArc==='high' ? 'ROLL! ◀ ▶' : 'JUMP! ▲';   // tell the player which way to dodge
+  const cue = 'DODGE! ◀ ▲ ▶';                          // any direction works — just move clear in time
   g.save(); g.textAlign='center'; g.globalAlpha=a;
   g.font='700 46px Fredoka, sans-serif';
   g.fillStyle=C.ink;     g.fillText(cue, W/2+2, 130+2);
@@ -2458,8 +2480,8 @@ function drawRoll(x,y){
 }
 // big arrow dodge buttons (only during a wind-up); any one dodges
 function drawDodgeButtons(){
-  const armed = dodgeWin>0;                                       // a foe attack is incoming → dodge now
-  const need = !armed ? [] : (boss.atkArc==='high' ? ['back','fwd'] : ['up']);   // the CORRECT button(s) for this attack
+  const armed = dodgeWin>0 && !player.dodging;                    // a foe attack is incoming and not yet dodged
+  const need = !armed ? [] : ['back','up','fwd'];                 // any direction dodges — light them all up
   const pulse=0.6+0.4*Math.sin(performance.now()/100);
   for(const r of dodgeBtnRects()){
     const k=r.rad/50;                                    // scale glyph/label with the button size
