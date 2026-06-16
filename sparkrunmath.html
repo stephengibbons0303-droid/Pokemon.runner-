@@ -224,7 +224,7 @@ const BOSSES = [
     // a right-facing sprite so its leading edge points left toward Pikachu.
     moves:[
       { name:'Aura Sphere',  file:'luca_aurasphere.png',  proj:'luca_proj_as.png', col:'#6fe6e0', flip:true },
-      { name:'Flash Cannon', file:'luca_flashcannon.png', proj:'luca_proj_fc.png', col:'#ffe79a' },
+      { name:'Flash Cannon', file:'luca_flashcannon.png', proj:'luca_proj_fc.png', col:'#ffe79a', beam:true },
       { name:'Dragon Pulse', file:'luca_dragonpulse.png', proj:'luca_proj_dp.png', col:'#7fe05a', flip:true },
       { name:'Vacuum Wave',  file:'luca_vacuumwave.png',  proj:'luca_proj_vw.png', col:'#e2ecf5', flip:true },
     ] },
@@ -381,7 +381,7 @@ const MAX_CHARGE = 6;
 // (lightning arc), 'orb' (a flying energy ball). dmg-0 buffs need none.
 const PIKA_MOVES = [
   { key:'qa', name:'Quick Attack', file:'pika_quickattack.png', icon:'pika_btn_qa.png', kind:'basic', dmg:1, cost:0, gain:1, col:'#e3ecff', unlock:0, blurb:'+1 charge', proj:'dash', dashProj:'pika_proj_qa.png' },
-  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt', proj:'bolt', projImg:'pika_proj_tb.png' },
+  { key:'tb', name:'Thunderbolt',  file:'pika_thunderbolt.png', icon:'pika_btn_tb.png', dmg:2, cost:1, gain:0, col:'#ffe14a', unlock:0, blurb:'Strong bolt', proj:'bolt', projImg:'pika_proj_tb.png', beam:true },
   { key:'eb', name:'Electro Ball', file:'pika_electroball.png', icon:'pika_btn_eb.png', dmg:3, cost:2, gain:0, col:'#ffc23a', unlock:0, blurb:'Big hit', proj:'orb', projImg:'pika_proj_eb.png' },
   { key:'ew', name:'Electroweb',   file:'pika_electroweb.png',  icon:'pika_btn_ew.png', dmg:1, cost:1, gain:0, shield:1, col:'#8fe0ff', unlock:1, blurb:'Blocks 1 hit', proj:'orb', projImg:'pika_proj_ew.png' },
   { key:'it', name:'Iron Tail',    file:'pika_irontail.png',    dmg:4, cost:3, gain:0, col:'#dfe3ea', unlock:2, blurb:'Heavy slam', proj:'dash' },
@@ -1065,7 +1065,7 @@ function bossFire(special, mv, heavy){
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
   const kind = boss.cfg.duel==='grove' ? 'leaf' : (boss.cfg.duel==='dojo' ? 'aura' : 'water');
   foeShots.push({ t:0, dur:dodgeMax, x0,y0,x1,y1, col, r: heavy?32:(special?22:14), kind, arc, heavy:!!heavy,
-    sprite: (mv&&mv.proj) ? bossSprite(mv.proj) : null, spin: !!(mv&&mv.spin), flip: !!(mv&&mv.flip) });
+    sprite: (mv&&mv.proj) ? bossSprite(mv.proj) : null, spin: !!(mv&&mv.spin), flip: !!(mv&&mv.flip), beam: !!(mv&&mv.beam) });
 }
 // start charging the signature heavy move: ~2s glow + shake telegraph, invulnerable while charging
 function startHeavy(){
@@ -1263,8 +1263,8 @@ function pikaFire(m){
       if(pikaLunge.spr) pikaAtk=null;                          // don't also draw the perform-pose over the dash
     } else if(img){                                            // fly the real sprite to the boss
       const straight = (proj==='bolt');                        // beam shoots flat & fast; orbs lob a little
-      shots.push({ sprite:img, t:0, dur: straight?0.2:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y,
-                   col:m.col, r:m.dmg>=3?22:16, arc: straight?6:26, hit:false });
+      shots.push({ sprite:img, t:0, dur: m.beam?0.42:(straight?0.2:0.34), x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y,
+                   col:m.col, r:m.dmg>=3?22:16, arc: straight?6:26, hit:false, beam: !!m.beam });
     } else if(proj==='orb'){
       shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12, x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, arc:26, hit:false });
     } else {                                                   // bolt (or dash outside a duel): a quick lightning arc
@@ -2567,9 +2567,25 @@ function drawSerpentPlaceholder(tint,hurt){
 // Pikachu's attack flying to the boss. Moves with projectile art (Electro Ball,
 // Electroweb, Thunderbolt) fly the real sprite with a glow tail; others draw a
 // procedural glowing orb.
+// beam specials (Flash Cannon, Thunderbolt): the sprite STRETCHES from the muzzle
+// (x0,y0) to the target (x1,y1) — fires out fast, then sustains full-length through
+// the dodge window — instead of a small object travelling across.
+function drawBeam(s){
+  const p=Math.min(1,s.t/s.dur), e=Math.min(1,p/0.4);            // extend over the first ~40%, then hold
+  const tx=s.x0+(s.x1-s.x0)*e, ty=s.y0+(s.y1-s.y0)*e;
+  const dx=tx-s.x0, dy=ty-s.y0, len=Math.max(2,Math.hypot(dx,dy)), ang=Math.atan2(dy,dx);
+  const h=Math.max(46, (s.r||16)*2.6);
+  g.save(); g.translate(s.x0,s.y0); g.rotate(ang);
+  g.globalAlpha=0.3; g.strokeStyle=s.col; g.lineWidth=h*1.15; g.lineCap='round';   // soft outer glow
+  g.beginPath(); g.moveTo(6,0); g.lineTo(len,0); g.stroke();
+  g.globalAlpha=1; g.imageSmoothingEnabled=true;
+  g.drawImage(spr2d(s.sprite), 0, -h/2, len, h);                 // beam art stretched muzzle→tip
+  g.restore();
+}
 function drawShots(){
   const now=performance.now();
   shots.forEach(s=>{
+    if(s.beam && s.sprite && s.sprite.ready){ drawBeam(s); return; }   // Thunderbolt beam
     const p=Math.min(1,s.t/s.dur), arc=s.arc||26;
     const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // gentle arc
     if(s.sprite && s.sprite.ready){                    // --- real projectile sprite (faces right toward the boss) ---
@@ -2600,6 +2616,7 @@ function drawShots(){
 function drawFoeShots(){
   const now=performance.now();
   foeShots.forEach(s=>{
+    if(s.beam && s.sprite && s.sprite.ready){ drawBeam(s); return; }   // Flash Cannon beam
     const p=Math.min(1,s.t/s.dur), arc=s.arc||34;
     const x=s.x0+(s.x1-s.x0)*p, y=s.y0+(s.y1-s.y0)*p - Math.sin(p*Math.PI)*arc;   // arcs over toward Pikachu
     if(s.sprite && s.sprite.ready){                    // --- real projectile sprite ---
