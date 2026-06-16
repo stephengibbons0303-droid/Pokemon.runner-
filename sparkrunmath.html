@@ -1386,16 +1386,16 @@ function pikaFire(m){
       if(pikaLunge.spr) pikaAtk=null;                          // don't also draw the perform-pose over the dash
     } else if(img){                                            // fly the real sprite to the boss
       const straight = (proj==='bolt');                        // beam shoots flat & fast; orbs lob a little
-      shots.push({ sprite:img, t:0, dur: m.beam?0.42:(straight?0.2:0.34), x0:PLAYER_X+44, y0:player.y-12-duelLift(), x1:aim.x, y1:aim.y,
+      shots.push({ sprite:img, t:0, dur: m.beam?0.42:(straight?0.2:0.34), x0:PLAYER_X+(pikaDX||0)+44, y0:player.y-12-duelLift(), x1:aim.x, y1:aim.y,
                    col:m.col, r:m.dmg>=3?22:16, arc: straight?6:26, hit:false, beam: !!m.beam });
     } else if(proj==='orb'){
-      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+44, y0:player.y-12-duelLift(), x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, arc:26, hit:false });
+      shots.push({ kind:'orb', t:0, dur:0.34, x0:PLAYER_X+(pikaDX||0)+44, y0:player.y-12-duelLift(), x1:aim.x, y1:aim.y, col:m.col, r:m.dmg>=3?20:15, arc:26, hit:false });
     } else {                                                   // bolt (or dash outside a duel): a quick lightning arc
-      zaps.push({ life:0.32, max:0.32, x1:PLAYER_X+40, y1:player.y-6-duelLift(), x2:aim.x, y2:aim.y });
+      zaps.push({ life:0.32, max:0.32, x1:PLAYER_X+(pikaDX||0)+40, y1:player.y-6-duelLift(), x2:aim.x, y2:aim.y });
       bossImpact(aim);
     }
   } else {
-    correctPop(PLAYER_X+30, player.y-10);     // setup moves sparkle on Pikachu
+    correctPop(PLAYER_X+(pikaDX||0)+30, player.y-10-duelLift());     // setup moves sparkle on Pikachu
   }
 }
 function bossDefeated(){
