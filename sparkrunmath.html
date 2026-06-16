@@ -189,8 +189,8 @@ const BOSSES = [
     duel:'lake',                                  // L1 uses the no-math lair duel (lake scene)
     evade:'submerge', lowhp:'heal',               // slips under to dodge; dives to recover at low HP
     roar:'gyara_roar.mp3', cry:'gyara_cry.mp3', roar2:'gyara_roar2.mp3',
-    atkSeqs:['gyara_waterfall.png','gyara_icefang.png'],   // specials cycled as attacks
-    powerSeq:'gyara_dragondance.png',                      // plays on the dive-recover power-up
+    atkSeqs:['gyara_waterfall.png','gyara_icefang.png','gyara_dragondance.png'],   // specials cycled as attacks
+    powerSeq:'gyara_dragondance.png',                      // also the dive-recover power-up flourish
     heavy:'gyara_waterfall.png', heavyName:'Waterfall',    // signature 30% move (charged, telegraphed)
     lines:[
       { who:'gyara', txt:'GRAAAH! Who disturbs my lake?' },
@@ -199,7 +199,7 @@ const BOSSES = [
       { who:'pika',  txt:'Pika! ⚡ (Then we battle!)' },
     ],
     moves:[
-      { name:'Dragon Dance', file:'gyara_dragondance.png', col:'#b18cf0' },
+      { name:'Dragon Dance', file:'gyara_dragondance.png', proj:'gyara_proj_dd.png', col:'#b18cf0' },
       { name:'Waterfall',    file:'gyara_waterfall.png',   col:'#5fb0e6' },
       { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a' },
       { name:'Ice Fang',     file:'gyara_icefang.png',     col:'#9fe0ff' },
