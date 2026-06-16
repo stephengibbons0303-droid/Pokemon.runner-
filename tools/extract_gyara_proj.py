@@ -27,19 +27,21 @@ TARGET = 240
 def cutout(path):
     a = np.asarray(Image.open(path).convert('RGB')).astype(int)
     h, w, _ = a.shape
-    pw = np.abs(a - 255).sum(2) < 18                        # flat sheet-white
+    corners = np.array([a[0, 0], a[0, -1], a[-1, 0], a[-1, -1]])
+    whitebg = corners.sum(1).mean() > 600                   # bg is white (Dragon Dance) vs black (Ice Fang)
+    bgm = (np.abs(a - 255).sum(2) < 18) if whitebg else (a.sum(2) < 45)
     seed = np.zeros((h, w), bool); seed[0] = seed[-1] = seed[:, 0] = seed[:, -1] = True
-    seed &= pw
-    fg = ~ndimage.binary_propagation(seed, mask=pw)         # drop white reachable from the border
+    seed &= bgm
+    fg = ~ndimage.binary_propagation(seed, mask=bgm)        # drop bg reachable from the border
     lab, n = ndimage.label(fg); keep = np.zeros_like(fg)
     for i in range(1, n + 1):
         c = lab == i
         if c.sum() >= 0.0004 * h * w: keep |= c             # main blob(s), drop specks
-    # strip LARGE flat-white pockets trapped inside the swirl; keep small specks (stars)
-    tl, tn = ndimage.label(keep & pw)
+    # strip LARGE flat-bg pockets trapped inside the FX (e.g. swirl gaps); keep small specks (stars)
+    tl, tn = ndimage.label(keep & bgm)
     for i in range(1, tn + 1):
         c = tl == i
-        if c.sum() > 0.0006 * h * w: keep &= ~c             # ~> 600px on a 1024² sheet = a gap, not a star
+        if c.sum() > 0.0006 * h * w: keep &= ~c
     fg = keep
     ys, xs = np.where(fg)
     out = np.dstack([a.astype(np.uint8), (fg * 255).astype(np.uint8)])[ys.min():ys.max()+1, xs.min():xs.max()+1]
