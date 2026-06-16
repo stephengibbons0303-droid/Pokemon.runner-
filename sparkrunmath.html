@@ -181,6 +181,7 @@ const BOSS_SEQ = {
 };
 for(const k in BOSS_SEQ){ const s=BOSS_SEQ[k]; s.n=4; s.img=new Image(); s.ready=false; s.img.onload=()=>{ s.ready=true; }; s.img.src=s.file; }
 const BOSS_X = 760, BOSS_Y = 232, BOSS_H = 280;   // boss anchor + on-screen height
+const HOVER_H = 110;                              // how high an 'air' boss (Moltres) floats above its perch
 // one boss per level — drop a PNG in and set its file; null = drawn placeholder.
 // (more Pokémon to come; each gets its own sprite + tint.)
 const BOSSES = [
@@ -268,12 +269,23 @@ const BOSSES = [
       { name:'Air Slash',    file:'sciz_airslash.png',    proj:'sciz_proj_as.png', col:'#dfeaf5' },
     ] },
   { name:'Galarian Moltres', file:'galmoltres.png', tint:'#c03a6a',
-    roar:'moltres_cry.wav', cry:'moltres_cry.wav', roar2:'moltres_cry.wav',   // battle cry (intro now; dodge/attack when it becomes a duel)
+    duel:'summit',                                // L5 volcanic-perch action duel
+    air:true, evade:'soar', lowhp:'enrage',       // hovers in the air + descends to the perch to attack; soars aside to dodge; flares up at low HP
+    flip:true,                                    // face Pikachu
+    roar:'moltres_cry.wav', cry:'moltres_cry.wav', roar2:'moltres_cry.wav',
+    atkSeqs:['moltres_fierywrath.png','moltres_airslash.png','moltres_hurricane.png'],   // cycled flying attacks
+    powerSeq:'moltres_fierywrath.png',            // flare-up flourish on the enrage
+    heavy:'moltres_darkpulse.png', heavyName:'Dark Pulse',   // charged signature
+    lines:[
+      { who:'foe',  txt:'The skies answer to me. Descend and burn!' },
+      { who:'pika', txt:'Pika-pi! (We’ll bring you down!)' },
+    ],
+    // proj = real projectile art (Hurricane was pre-rotated to point down-left).
     moves:[
-      { name:'Fiery Wrath', file:'moltres_fierywrath.png', col:'#ff4a9a' },
-      { name:'Air Slash',   file:'moltres_airslash.png',   col:'#bfeaff' },
-      { name:'Dark Pulse',  file:'moltres_darkpulse.png',  col:'#9a6ae0' },
-      { name:'Hurricane',   file:'moltres_hurricane.png',  col:'#cfe6f5' },
+      { name:'Fiery Wrath', file:'moltres_fierywrath.png', proj:'moltres_proj_fw.png', col:'#ff4a9a' },
+      { name:'Air Slash',   file:'moltres_airslash.png',   proj:'moltres_proj_as.png', col:'#cfe6f5' },
+      { name:'Dark Pulse',  file:'moltres_darkpulse.png',  proj:'moltres_proj_dp.png', col:'#9a6ae0' },
+      { name:'Hurricane',   file:'moltres_hurricane.png',  proj:'moltres_proj_hr.png', col:'#dfe6ee' },
     ] },
 ];
 
@@ -882,7 +894,7 @@ function enterBoss(retry){
   scenePreview=null;                                  // a real fight never inherits a dev scene preview
   const hp = cfg.duel ? 100 : (4+levelIdx*3);         // duel uses a 0-100 energy bar
   boss={ cfg, hp, maxHp:hp, hurt:0, bob:0, enter:1.2, defeated:false, deadT:0, atk:0,
-         subY:0, sideX:0, lungeX:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
+         subY:0, sideX:0, lungeX:0, hoverY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
          evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0, charging:null };   // + special-move / charge state
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; pikaDX=0;
   if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
@@ -995,11 +1007,11 @@ function castMove(m){
 function applyPikaHit(m, dmg){
   const sup = dmg!=null;
   if(!canTarget()){ pikaFire(m); return; }            // he's already under/charging → whiff
-  if(!sup && Math.random()<0.28){                     // dodge: step aside (sidestep) or submerge
-    const sidestep=boss.cfg.evade==='sidestep';
-    boss.evade={t:0,dur:sidestep?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
+  if(!sup && Math.random()<0.28){                     // dodge: soar up (air), step aside, or submerge
+    const ev=boss.cfg.evade;
+    boss.evade={t:0,dur:ev==='soar'?0.6:ev==='sidestep'?0.5:0.7}; boss.evadeDir=Math.random()<0.5?-1:1;
     if(boss.cfg.cry) voice(boss.cfg.cry,0.5,'foe');
-    bossMsg=boss.cfg.name+(sidestep?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
+    bossMsg=boss.cfg.name+(ev==='soar'?' soars aside!':ev==='sidestep'?' sidesteps!':' slips under!'); bossMsgT=1.0; pikaFire(m); return;
   }
   boss.hp=Math.max(0, boss.hp-(dmg!=null?dmg:duelDmg(m))); boss.hurt=0.6;
   pikaFire(m); voice(PIKA_THUNDER,0.8,'pika'); flash={a:sup?0.5:0.32,col:m.col};
@@ -1038,7 +1050,7 @@ function foeAttack(heavy){
 const DUEL_FIRE_COL = { lake:'#5fb0e6', dojo:'#a8e0ff', grove:'#7be05a' };
 function bossFire(special, mv, heavy){
   const drop = duelDrop();
-  const x0 = BOSS_X + (boss.sideX||0) - 96, y0 = BOSS_Y + drop - 6;       // the boss's mouth/front
+  const x0 = BOSS_X + (boss.sideX||0) - 96, y0 = BOSS_Y + drop - 6 - (boss.hoverY||0);   // the boss's mouth/front (incl. hover height)
   const x1 = PLAYER_X + (pikaDX||0) + 16,  y1 = player.y + DUEL_PIKA_DROP - 14;   // Pikachu
   const col = (mv && mv.col) || DUEL_FIRE_COL[boss.cfg.duel] || '#5fb0e6';
   const arc = boss.atkArc==='high' ? 150 : 34;          // high attacks lob up and fall onto Pikachu
@@ -1124,10 +1136,18 @@ function updateDuel(dt){
            if(q>=1){ bossLunge=null; boss.lungeX=0; } }
   }
 
-  // --- quick dodge (evading a Pikachu hit): sidestep (lateral) or submerge (sink) ---
+  // --- quick dodge (evading a Pikachu hit): soar up (air), sidestep (lateral) or submerge (sink) ---
   if(boss.evade){ boss.evade.t+=dt; const k=Math.sin(Math.min(1,boss.evade.t/boss.evade.dur)*Math.PI);
-    if(boss.cfg.evade==='sidestep') boss.sideX=k*120*(boss.evadeDir||1); else boss.subY=k*150;
-    if(boss.evade.t>=boss.evade.dur){ boss.evade=null; boss.subY=0; boss.sideX=0; } return; }
+    if(boss.cfg.evade==='soar') boss.hoverY=HOVER_H+k*140;            // dart higher into the air
+    else if(boss.cfg.evade==='sidestep') boss.sideX=k*120*(boss.evadeDir||1);
+    else boss.subY=k*150;
+    if(boss.evade.t>=boss.evade.dur){ boss.evade=null; boss.subY=0; boss.sideX=0; if(boss.cfg.evade==='soar') boss.hoverY=HOVER_H; } return; }
+
+  // --- air boss (Moltres): hover above the perch; descend to it to charge/fire a power move ---
+  if(boss.cfg.air){
+    const onPerch = dodgeWin>0 || !!boss.charging || !!bossLunge;     // descend while winding up / charging
+    boss.hoverY += ((onPerch ? 0 : HOVER_H) - (boss.hoverY||0)) * Math.min(1, dt*4);
+  }
 
   if(boss.cfg.lowhp==='enrage'){
     // --- Swords Dance: a one-time enrage at low energy (powers up, no heal) ---
@@ -1211,7 +1231,7 @@ function spawnChallenge(){
 // the boss's real on-screen body point, so projectiles/bolts actually land on it
 function bossAimPoint(){
   if(bossMode==='duel' && boss){
-    return { x: BOSS_X + (boss.sideX||0) - 30, y: BOSS_Y + duelDrop() - 20 };
+    return { x: BOSS_X + (boss.sideX||0) - 30, y: BOSS_Y + duelDrop() - 20 - (boss.hoverY||0) };   // aim at the boss's live height (Moltres hovers)
   }
   return { x: BOSS_X-60, y: BOSS_Y };
 }
@@ -2174,44 +2194,49 @@ function drawCrystalBack(){
     g.globalAlpha=0.18+0.18*Math.sin(t*2+i); g.fillStyle='#aee9ff'; g.fillRect(x,y,2,2); }
   g.globalAlpha=1; g.restore();
 }
-/* ----- Galarian Moltres twilight-summit duel scene (no maths) -----
-   A night mountaintop: starry dusk sky, a low moon, drifting stormclouds and
-   layered snow-capped peaks, with sinister blue/violet embers rising from the
-   cliff — matching Galarian Moltres's dark flames and the L5 Star Summit biome. */
+/* ----- Galarian Moltres volcanic-perch duel scene (no maths) -----
+   A dark volcanic night: starry sky with a hazy red moon, jagged unlit peaks, a
+   glowing lava crater under BOSS_X (the perch Moltres descends to) with radiating
+   cracks, and rising orange embers + a few magenta dark-flame motes. */
 function drawSummitBack(){
   g.save();
   const t=performance.now()*0.001;
   const sky=g.createLinearGradient(0,0,0,FLOOR_Y);
-  sky.addColorStop(0,'#0d0922'); sky.addColorStop(0.5,'#2a1747'); sky.addColorStop(0.82,'#5a2a63'); sky.addColorStop(1,'#7a3a5e');
+  sky.addColorStop(0,'#0c0820'); sky.addColorStop(0.45,'#241032'); sky.addColorStop(0.78,'#5a1f30'); sky.addColorStop(1,'#7e2a22');
   g.fillStyle=sky; g.fillRect(0,0,W,FLOOR_Y);
-  // stars (twinkle on the clock)
-  for(let i=0;i<70;i++){ const x=(i*97)%W, y=(i*53)%250;
-    g.globalAlpha=(0.35+0.55*Math.abs(Math.sin(t*1.4+i)))*0.9; g.fillStyle='#e3e9ff'; g.fillRect(x,y,2,2); }
+  // stars (upper sky)
+  for(let i=0;i<54;i++){ const x=(i*97)%W, y=(i*43)%200;
+    g.globalAlpha=(0.3+0.5*Math.abs(Math.sin(t*1.3+i)))*0.8; g.fillStyle='#e6dcff'; g.fillRect(x,y,2,2); }
   g.globalAlpha=1;
-  // low moon + halo
-  const mx=W*0.80, my=118;
-  const mg=g.createRadialGradient(mx,my,6,mx,my,130); mg.addColorStop(0,'rgba(255,236,212,.45)'); mg.addColorStop(1,'rgba(255,236,212,0)');
-  g.fillStyle=mg; g.beginPath(); g.arc(mx,my,130,0,7); g.fill();
-  g.fillStyle='#efe1c6'; g.beginPath(); g.arc(mx,my,44,0,7); g.fill();
-  g.fillStyle='#dccbac'; g.beginPath(); g.arc(mx-14,my-8,8,0,7); g.arc(mx+12,my+10,6,0,7); g.fill();
-  // drifting dark stormclouds near the top
-  for(let i=0;i<4;i++){ const y=46+i*30, off=(((t*(8+i*3))*(i%2?-1:1))%(W+360)+W+360)%(W+360)-180;
-    g.fillStyle='rgba(18,10,34,.55)'; g.beginPath();
-    for(let b=0;b<5;b++){ g.ellipse(off+b*70, y+(b%2?6:0), 56, 22, 0, 0, 7); } g.fill(); }
-  // layered snow-capped peaks (back lighter/hazier, front darker)
-  const peaks=(base,h,col,snow)=>{ g.fillStyle=col; g.beginPath(); g.moveTo(0,FLOOR_Y); g.lineTo(0,base);
-    const caps=[]; for(let x=-60;x<=W+120;x+=150){ const px=x+75, py=base-h*(0.55+0.45*Math.abs(Math.sin(px*0.7)));
-      g.lineTo(x,base); g.lineTo(px,py); caps.push([px,py]); }
-    g.lineTo(W,base); g.lineTo(W,FLOOR_Y); g.closePath(); g.fill();
-    if(snow){ g.fillStyle='rgba(235,240,255,.85)'; for(const [px,py] of caps){
-      g.beginPath(); g.moveTo(px,py); g.lineTo(px-16,py+24); g.lineTo(px-4,py+18); g.lineTo(px+4,py+24); g.lineTo(px+14,py+18); g.lineTo(px+18,py+26); g.closePath(); g.fill(); } } };
-  peaks(372,150,'#3a2a60',true); peaks(420,120,'#2c2050',true); peaks(456,90,'#221940',false);
-  // cliff platform the foe perches on + sinister blue/violet embers rising
-  g.fillStyle='#1c1436'; g.fillRect(0,FLOOR_Y-4,W,H-FLOOR_Y+4);
-  g.fillStyle='rgba(150,120,220,.12)'; g.fillRect(0,FLOOR_Y,W,3);
-  for(let i=0;i<26;i++){ const x=(i*73+t*16)%W, y=FLOOR_Y-((t*46+i*57)%(FLOOR_Y-70));
-    g.globalAlpha=0.55*(0.4+0.6*Math.sin(t*2.4+i)); g.fillStyle=(i%3)?'#7a3aff':'#3a7aff';
-    g.beginPath(); g.arc(x,y,2.4,0,7); g.fill(); }
+  // hazy red moon
+  const mx=W*0.80, my=104;
+  const mg=g.createRadialGradient(mx,my,6,mx,my,120); mg.addColorStop(0,'rgba(255,190,150,.40)'); mg.addColorStop(1,'rgba(255,150,120,0)');
+  g.fillStyle=mg; g.beginPath(); g.arc(mx,my,120,0,7); g.fill();
+  g.fillStyle='#e9b48c'; g.beginPath(); g.arc(mx,my,40,0,7); g.fill();
+  // jagged dark volcanic peaks (no snow)
+  const peaks=(base,h,col)=>{ g.fillStyle=col; g.beginPath(); g.moveTo(0,FLOOR_Y); g.lineTo(0,base);
+    for(let x=-60;x<=W+120;x+=150){ const px=x+75, py=base-h*(0.5+0.5*Math.abs(Math.sin(px*0.7))); g.lineTo(x,base); g.lineTo(px,py); }
+    g.lineTo(W,base); g.lineTo(W,FLOOR_Y); g.closePath(); g.fill(); };
+  peaks(372,150,'#2a1530'); peaks(420,120,'#22101f');
+  // volcanic rock ground
+  g.fillStyle='#1a1020'; g.fillRect(0,FLOOR_Y-4,W,H-FLOOR_Y+4);
+  // glowing lava crater = the perch Moltres descends to (centred under BOSS_X)
+  const px=BOSS_X, py=FLOOR_Y+6, pr=0.7+0.3*Math.sin(t*1.5);
+  const cg=g.createRadialGradient(px,py,4,px,py,160);
+  cg.addColorStop(0,'rgba(255,170,60,'+(0.55*pr)+')'); cg.addColorStop(0.5,'rgba(255,90,40,'+(0.28*pr)+')'); cg.addColorStop(1,'rgba(255,90,40,0)');
+  g.fillStyle=cg; g.beginPath(); g.ellipse(px,py,160,48,0,0,7); g.fill();
+  // lava cracks radiating across the rock
+  g.strokeStyle='rgba(255,110,40,.45)'; g.lineWidth=3; g.lineCap='round';
+  for(let i=0;i<6;i++){ const a=i*1.05+0.3; g.beginPath(); g.moveTo(px+Math.cos(a)*80, py+Math.sin(a)*20);
+    g.lineTo(px+Math.cos(a)*(170+i*26), FLOOR_Y+34+Math.sin(a)*8); g.stroke(); }
+  // crater rim + molten pool
+  g.fillStyle='#3a1810'; g.beginPath(); g.ellipse(px,py,88,27,0,0,7); g.fill();
+  g.fillStyle='#ff7a2a'; g.beginPath(); g.ellipse(px,py,64,18,0,0,7); g.fill();
+  g.fillStyle='#ffd24a'; g.beginPath(); g.ellipse(px,py-2,40+pr*4,10,0,0,7); g.fill();
+  // rising embers (orange + a few magenta dark-flame motes)
+  for(let i=0;i<28;i++){ const x=(i*73+t*16)%W, y=FLOOR_Y-((t*52+i*57)%(FLOOR_Y-60));
+    g.globalAlpha=0.6*(0.4+0.6*Math.sin(t*2.4+i)); g.fillStyle=(i%4===0)?'#d23ad0':'#ff7a2a';
+    g.beginPath(); g.arc(x,y,2.2,0,7); g.fill(); }
   g.globalAlpha=1; g.restore();
 }
 function drawDodgeWave(){
@@ -2446,7 +2471,8 @@ function drawBossSprite(){
   const chg = !!boss.charging;
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : (chg ? Math.sin(performance.now()/26)*6 : 0);   // shudders while charging its heavy
   const drop = (bossMode==='duel') ? duelDrop() : 0;   // per-scene stand/submersion height
-  const cx=BOSS_X+slide+shake+(boss.sideX||0)+(boss.lungeX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*10;   // sidestep + lunge shift x
+  const hov = boss.cfg.air ? (boss.hoverY||0) : 0;       // Moltres floats above its perch
+  const cx=BOSS_X+slide+shake+(boss.sideX||0)+(boss.lungeX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*(hov?16:10)-hov;   // sidestep+lunge x; hover lifts y (deeper bob in the air)
   // Synthesis recover (grove): a pulsing green aura while it heals in place
   const synth = bossMode==='duel' && boss.cfg.duel==='grove' && boss.diveState!=='up';
   if(chg || synth){                                   // charging = golden; Synthesis = green
@@ -2472,7 +2498,9 @@ function drawBossSprite(){
     g.imageSmoothingEnabled=true; g.drawImage(im, -w/2, -SH/2, w, SH);
   } else if(aseq){
     const sq=aseq.seq, p=Math.min(1,aseq.t/aseq.dur), fi=Math.min(sq.n-1,Math.floor(p*sq.n));
-    const SH=BOSS_H*1.3, s=SH/sq.ch, w=sq.cw*s;
+    let s=(BOSS_H*1.3)/sq.ch;
+    const MAXW=W*0.62; if(sq.cw*s>MAXW) s=MAXW/sq.cw;   // cap very wide FX (Moltres) so it stays on screen
+    const w=sq.cw*s, SH=sq.ch*s;
     g.imageSmoothingEnabled=true; g.drawImage(sq.img, fi*sq.cw,0,sq.cw,sq.ch, -w/2,-SH/2, w,SH);
   } else if(spr&&spr.ready){
     const im=spr2d(spr), s=BOSS_H/im.height, w=im.width*s;
