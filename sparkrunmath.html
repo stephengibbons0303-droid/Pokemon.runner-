@@ -1884,7 +1884,8 @@ function drawHUD(){
   {
     g.font='22px Fredoka, sans-serif'; g.textAlign='left'; g.textBaseline='top';
     const duelB = state==='boss' && bossMode==='duel';
-    let hx=22, hy = duelB?86 : (state==='boss'?52:H-40);
+    // duel: top-left level with the pause/volume buttons (and clear of the fullscreen button + the energy bar below)
+    let hx = duelB?64:22, hy = duelB?22 : (state==='boss'?52:H-40);
     for(let i=0;i<3;i++){ g.globalAlpha=i<hearts?1:.25; g.fillText('❤️', hx+i*30, hy); } g.globalAlpha=1;
   }
 
