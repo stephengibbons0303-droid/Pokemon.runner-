@@ -1317,7 +1317,12 @@ function closeDex(){ const r=dexReturn; newlyCaught=null; state=(r==='won'||r===
 function openDex(){ dexReturn='menu'; newlyCaught=null; dexT=0; state='dex'; Audio8.sfx('select'); }
 
 function hop(){
-  if(state==='dex'){ closeDex(); return; }
+  if(state==='dex'){                                            // tap a befriended Pokémon to hear its cry; tap elsewhere to leave
+    for(const s of dexSlotRects()){
+      if(caught.has(s.mon.name) && pointInRect(s,p.x,p.y)){ const cry=s.mon.roar||s.mon.cry; if(cry) voice(cry,0.95,'foe'); Audio8.sfx('select'); return; }
+    }
+    closeDex(); return;
+  }
   if(state==='menu'){ Audio8.startMusic(); startLevel(0); return; }
   if(state==='over'||state==='won'){ resetRun(); state='menu'; return; }
   if(state==='levelup'){ startLevel(levelIdx+1); return; }
@@ -1348,6 +1353,11 @@ function hop(){
 const MUTE={x:W-58,y:18,w:40,h:40};
 const PAUSE={x:W-106,y:18,w:40,h:40};                          // pause toggle, left of mute
 function dexBtnRect(){ return {x:18,y:18,w:104,h:40}; }        // start-screen gallery button (top-left)
+// gallery friend slots (must match drawDex's layout) — for tap-to-roar
+function dexSlotRects(){
+  const n=BOSSES.length, cw=150, gap=18, total=n*cw+(n-1)*gap, sx=(W-total)/2, top=168, ch=204;
+  return BOSSES.map((mon,i)=>({ x:sx+i*(cw+gap), y:top, w:cw, h:ch, mon }));
+}
 const PROMPT={x:W/2-97, y:8, w:194, h:140};                   // top-centre prompt box (text sum, or Ash portrait in the audio pack — sized to the art's ~1.39 aspect, clears the high lane)
 const RESUME={x:W/2-150,y:H/2+20,w:300,h:64};                  // big resume button on the pause overlay
 // Size the top-corner pause/mute buttons to the physical-tap floor (capped so
@@ -2056,6 +2066,7 @@ function drawDex(){
   }
 
   const prompt = dexReturn==='menu' ? 'Tap to go back' : 'Tap to continue →';
+  if(caught.size){ g.fillStyle='rgba(255,244,230,.65)'; g.font='600 16px Fredoka, sans-serif'; g.fillText('tap a friend to hear it', W/2, H-54); }
   g.fillStyle=C.glow; g.font='700 26px Fredoka, sans-serif'; g.fillText(prompt, W/2, H-30);
   g.textAlign='left';
 }
