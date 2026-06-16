@@ -1045,12 +1045,13 @@ function foeAttack(heavy){
   // pick the move strip: heavy uses the signature move; specials cycle the boss's atkSeqs
   let file = heavy ? boss.cfg.heavy : (special && (boss.cfg.atkSeqs||[]).length ? boss.cfg.atkSeqs[boss.atkN++ % boss.cfg.atkSeqs.length] : null);
   let mv = file ? (boss.cfg.moves||[]).find(m=>m.file===file) : null;
-  // basics still throw a real projectile (one of the cycled attack moves with art), no cast anim
+  // basics still throw a real projectile (one of the cycled attack moves with art)
   if(!mv && !heavy){ const pool=(boss.cfg.moves||[]).filter(m=>m.proj && (boss.cfg.atkSeqs||[]).includes(m.file)); if(pool.length) mv=pick(pool); }
   if(heavy && mv && mv.lunge){                           // melee charge (Scizor X-Scissor): the body IS the attack
     bossLunge={ sprite: mv.proj ? bossSprite(mv.proj) : null, reach: Math.max(140, (BOSS_X-PLAYER_X)-210), back:0 };
   } else {
-    if(file){ const sq=BOSS_SEQ[file]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }   // cast-strip anim for projectile moves
+    const seqFile = file || (mv && mv.file);             // animate the cast strip on basics too (boss isn't static while attacking)
+    if(seqFile){ const sq=BOSS_SEQ[seqFile]; if(sq) boss.atkSeq={seq:sq,t:0,dur:windup}; }
     bossFire(special, mv, heavy);                        // a projectile flies from the boss to Pikachu, arriving as the window closes
   }
 }
