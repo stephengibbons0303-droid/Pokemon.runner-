@@ -2319,8 +2319,9 @@ function drawEnergyBar(x,y,w,label,hp,colA,colB,right){
   g.restore(); g.textAlign='left'; g.textBaseline='alphabetic';
 }
 function drawDuelBars(){
-  drawEnergyBar(16, 60, 300, 'PIKACHU', pikaHP, '#ffe14a', '#caa400', false);
-  drawEnergyBar(W-316, 60, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
+  // y=90 keeps the bars clear of the pause/speaker buttons (which occupy y≈18–78 top-right)
+  drawEnergyBar(16, 90, 300, 'PIKACHU', pikaHP, '#ffe14a', '#caa400', false);
+  drawEnergyBar(W-316, 90, 300, (boss.cfg.name||'GYARADOS').toUpperCase(), boss.hp, '#6fc0f0', '#2f6fa6', true);
 }
 function drawDuel(){
   const sc = boss.cfg.duel || scenePreview;   // scenePreview lets the dev menu show a scene before its duel is built
