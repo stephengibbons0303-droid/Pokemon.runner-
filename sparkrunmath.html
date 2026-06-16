@@ -204,7 +204,7 @@ const BOSSES = [
       { name:'Earthquake',   file:'gyara_earthquake.png',  col:'#caa46a' },
       { name:'Ice Fang',     file:'gyara_icefang.png',     col:'#9fe0ff' },
     ] },
-  { name:'Lucario',  file:'lucario.png',  hurtFile:'lucario_hurt.png', tint:'#3f6fd0',
+  { name:'Lucario',  file:'luca_idle.png',  tint:'#3f6fd0',
     duel:'dojo',                                  // L2 uses the no-math dojo duel
     evade:'sidestep', lowhp:'enrage',             // sidesteps to dodge; Swords Dance enrage at low HP (no heal)
     flip:true,                                    // his art faces right; mirror it to face Pikachu
@@ -249,7 +249,7 @@ const BOSSES = [
       { name:'Earth Power', file:'venu_earthpower.png',  proj:'venu_proj_ep.png', col:'#e0954a', flip:true },
       { name:'Frenzy Plant',file:'venu_frenzyplant.png', proj:'venu_proj_fp.png', col:'#5bbf4a' },
     ] },
-  { name:'Scizor',   file:'scizor.png',   tint:'#d04a3a',
+  { name:'Scizor',   file:'sciz_idle.png',   tint:'#d04a3a',
     duel:'crystal',                               // L4 crystal-cavern action duel
     evade:'sidestep', lowhp:'enrage',             // fast bug sidesteps; Swords Dance enrage at low HP
     flip:true,                                    // his art faces right; mirror it to face Pikachu
@@ -841,8 +841,17 @@ function resetRun(){ paused=false; bossMode='classic'; bossPhase=''; introReady=
 function startLevel(i){
   levelIdx=i; stepInLvl=0; state='play'; hearts=3; paused=false;   // fresh 3 lives each level (shared with its boss)
   QBAG={};                                                         // fresh non-repeating question bags
+  preloadBoss(i);                                                  // warm the boss art during the runner so it's ready at the battle
   groundPlayer();
   spawnGate();
+}
+// preload a level's boss sprites (idle + hover-flap + reaction) so it never pops in late
+function preloadBoss(i){
+  const b=BOSSES[i]||BOSSES[BOSSES.length-1];
+  if(b.file) bossSprite(b.file);
+  if(b.hurtFile) bossSprite(b.hurtFile);
+  (b.fly||[]).forEach(f=>bossSprite(f));
+  (b.moves||[]).forEach(m=>{ if(m.proj) bossSprite(m.proj); });
 }
 
 // dev-only: jump straight to a level's play section or its boss fight (see the
@@ -898,9 +907,7 @@ function enterBoss(retry){
          subY:0, sideX:0, lungeX:0, hoverY:0, dives:0, diveState:'up', diveT:0, power:1, riled:false, enraged:false,
          evade:null, evadeDir:1, atkKind:'basic', atkArc:'low', atkDmg:BASIC_DMG, atkSeq:null, atkN:0, charging:null };   // + special-move / charge state
   bossChal=null; bossSpeed=140 + levelIdx*16; bossCut=null; moveIdx=0; pikaAtk=null; pikaShield=0; charge=2; shots=[]; foeShots=[]; pikaLunge=null; bossLunge=null; pikaDX=0;
-  if(cfg.hurtFile) bossSprite(cfg.hurtFile);               // preload reaction frame
-  (cfg.moves||[]).forEach(m=>{ if(m.proj) bossSprite(m.proj); });   // preload real projectile art (no pop-in)
-  (cfg.fly||[]).forEach(f=>bossSprite(f));                          // preload hover-flap frames
+  preloadBoss(levelIdx);                                   // idle + reaction + hover-flap + projectile art (no pop-in)
   if(!availMoves().some(m=>m.key===equipped)) equipped='qa';
   groundPlayer();
   bossHold=0; bossIntroQueue=[];
@@ -2222,21 +2229,24 @@ function drawSummitBack(){
   peaks(372,150,'#2a1530'); peaks(420,120,'#22101f');
   // volcanic rock ground
   g.fillStyle='#1a1020'; g.fillRect(0,FLOOR_Y-4,W,H-FLOOR_Y+4);
-  // glowing lava crater = the perch Moltres descends to (centred under BOSS_X)
-  const px=BOSS_X, py=FLOOR_Y+6, pr=0.7+0.3*Math.sin(t*1.5);
-  const cg=g.createRadialGradient(px,py,4,px,py,160);
-  cg.addColorStop(0,'rgba(255,170,60,'+(0.55*pr)+')'); cg.addColorStop(0.5,'rgba(255,90,40,'+(0.28*pr)+')'); cg.addColorStop(1,'rgba(255,90,40,0)');
-  g.fillStyle=cg; g.beginPath(); g.ellipse(px,py,160,48,0,0,7); g.fill();
-  // lava cracks radiating across the rock
-  g.strokeStyle='rgba(255,110,40,.45)'; g.lineWidth=3; g.lineCap='round';
-  for(let i=0;i<6;i++){ const a=i*1.05+0.3; g.beginPath(); g.moveTo(px+Math.cos(a)*80, py+Math.sin(a)*20);
-    g.lineTo(px+Math.cos(a)*(170+i*26), FLOOR_Y+34+Math.sin(a)*8); g.stroke(); }
-  // crater rim + molten pool
-  g.fillStyle='#3a1810'; g.beginPath(); g.ellipse(px,py,88,27,0,0,7); g.fill();
-  g.fillStyle='#ff7a2a'; g.beginPath(); g.ellipse(px,py,64,18,0,0,7); g.fill();
-  g.fillStyle='#ffd24a'; g.beginPath(); g.ellipse(px,py-2,40+pr*4,10,0,0,7); g.fill();
-  // rising embers (orange + a few magenta dark-flame motes)
-  for(let i=0;i<28;i++){ const x=(i*73+t*16)%W, y=FLOOR_Y-((t*52+i*57)%(FLOOR_Y-60));
+  // --- raised volcano cone: Moltres perches on the crater rim (SUMMIT_DROP keeps his feet here) ---
+  const px=BOSS_X, rimY=FLOOR_Y-70, pr=0.7+0.3*Math.sin(t*1.5);
+  // ambient lava glow around the cone
+  const gg=g.createRadialGradient(px,rimY,8,px,rimY,220);
+  gg.addColorStop(0,'rgba(255,120,50,'+(0.32*pr)+')'); gg.addColorStop(1,'rgba(255,90,40,0)');
+  g.fillStyle=gg; g.beginPath(); g.arc(px,rimY,220,0,7); g.fill();
+  // cone body (rocky trapezoid from the rim down past the floor) + shaded right slope
+  g.fillStyle='#241526'; g.beginPath(); g.moveTo(px-92,rimY); g.lineTo(px+92,rimY); g.lineTo(px+220,H); g.lineTo(px-220,H); g.closePath(); g.fill();
+  g.fillStyle='#170c1a'; g.beginPath(); g.moveTo(px+26,rimY); g.lineTo(px+92,rimY); g.lineTo(px+220,H); g.lineTo(px+100,H); g.closePath(); g.fill();
+  // glowing lava streaks running down the slopes
+  g.strokeStyle='rgba(255,110,40,.5)'; g.lineWidth=4; g.lineCap='round';
+  for(let i=-2;i<=2;i++){ g.beginPath(); g.moveTo(px+i*26, rimY+8); g.lineTo(px+i*78, H-12); g.stroke(); }
+  // crater: dark rim, molten pool, bright core (pulsing)
+  g.fillStyle='#3a1810'; g.beginPath(); g.ellipse(px,rimY,92,24,0,0,7); g.fill();
+  g.fillStyle='#ff7a2a'; g.beginPath(); g.ellipse(px,rimY,66,16,0,0,7); g.fill();
+  g.fillStyle='#ffd24a'; g.beginPath(); g.ellipse(px,rimY-2,38+pr*6,9,0,0,7); g.fill();
+  // embers rising out of the crater
+  for(let i=0;i<24;i++){ const x=px-66+((i*53+t*30)%132), y=rimY-((t*60+i*47)%190);
     g.globalAlpha=0.6*(0.4+0.6*Math.sin(t*2.4+i)); g.fillStyle=(i%4===0)?'#d23ad0':'#ff7a2a';
     g.beginPath(); g.arc(x,y,2.2,0,7); g.fill(); }
   g.globalAlpha=1; g.restore();
@@ -2461,12 +2471,14 @@ function drawBossCutIn(){
 const DUEL_DROP=114;            // lower Gyarados so he sits in the lake (lake duel only)
 const DOJO_DROP=100;            // stand the foe on the dojo floor (dojo duel only)
 const GROVE_DROP=100;           // stand Venusaur on the grove floor
+const SUMMIT_DROP=30;           // perch Moltres ON the raised volcano (≈70px above the floor)
 // how far below BOSS_Y the duel foe is drawn, per scene (lake adds its submersion)
 function duelDrop(){
   const d=boss.cfg.duel;
-  if(d==='lake')  return DUEL_DROP + (boss.subY||0);
-  if(d==='grove') return GROVE_DROP;
-  return DOJO_DROP;             // dojo
+  if(d==='lake')   return DUEL_DROP + (boss.subY||0);
+  if(d==='grove')  return GROVE_DROP;
+  if(d==='summit') return SUMMIT_DROP;
+  return DOJO_DROP;             // dojo / crystal
 }
 function drawBossSprite(){
   const slide = (bossMode==='duel') ? 0 : (boss.enter>0 ? boss.enter*240 : 0);   // duel: rises/stands instead of sliding
@@ -2474,7 +2486,10 @@ function drawBossSprite(){
   const shake = boss.hurt>0 ? Math.sin(performance.now()/24)*7 : (chg ? Math.sin(performance.now()/26)*6 : 0);   // shudders while charging its heavy
   const drop = (bossMode==='duel') ? duelDrop() : 0;   // per-scene stand/submersion height
   const hov = boss.cfg.air ? (boss.hoverY||0) : 0;       // Moltres floats above its perch
-  const cx=BOSS_X+slide+shake+(boss.sideX||0)+(boss.lungeX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*(hov?16:10)-hov;   // sidestep+lunge x; hover lifts y (deeper bob in the air)
+  // only the lake foe (floating on water) and the air boss (hovering) bob vertically;
+  // grounded bosses (dojo/grove/crystal) stand still — no Gyarados-style float.
+  const bobAmp = boss.cfg.air ? 16 : (boss.cfg.duel==='lake' ? 8 : 0);
+  const cx=BOSS_X+slide+shake+(boss.sideX||0)+(boss.lungeX||0), cy=BOSS_Y+drop+Math.sin(boss.bob)*bobAmp-hov;   // sidestep+lunge x; hover lifts y
   // Synthesis recover (grove): a pulsing green aura while it heals in place
   const synth = bossMode==='duel' && boss.cfg.duel==='grove' && boss.diveState!=='up';
   if(chg || synth){                                   // charging = golden; Synthesis = green
