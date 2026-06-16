@@ -2627,7 +2627,11 @@ function drawFoeShots(){
       g.beginPath(); g.moveTo(s.x0+(x-s.x0)*0.45, s.y0+(y-s.y0)*0.45 - Math.sin(p*Math.PI)*arc*0.6); g.lineTo(x,y); g.stroke();
       g.globalAlpha=1; g.translate(x,y);
       if(s.spin) g.rotate(s.t*7);                       // Razor Leaf tumbles as it flies
-      else if(s.flip) g.scale(-1,1);                    // mirror so the head leads the flight (Earth Power)
+      else {                                            // orient along the arc so a trailed projectile angles down→up as it lobs
+        const vx=s.x1-s.x0, vy=(s.y1-s.y0) - arc*Math.PI*Math.cos(p*Math.PI);
+        g.rotate(Math.atan2(vy,vx) - (vx<0?Math.PI:0));  // ≈0 for flat shots; tilts to the velocity on a high lob
+        if(s.flip) g.scale(-1,1);                        // mirror so the head leads (Earth Power etc.)
+      }
       g.imageSmoothingEnabled=true; g.drawImage(im, -w/2,-h/2, w,h);
       g.restore();
       return;
