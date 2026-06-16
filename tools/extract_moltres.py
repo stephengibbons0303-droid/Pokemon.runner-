@@ -144,15 +144,16 @@ def main():
         print(f'{label:13s} -> moltres_seq_{key}.png  {strip.width}x{strip.height}  (BOSS_SEQ: cw={cw}, ch={ch})')
         previews.append((label, strip, cw))
     # gridded QA preview: each frame in its OWN uniform bordered cell so columns line
-    # up across moves (a plain stack misleads, since cw differs per move).
+    # up across moves (a plain stack misleads, since cw differs per move). GREEN cells —
+    # Moltres is dark purple/black, which vanishes against a dark or pink background.
     from PIL import ImageDraw
     cellw = max(cw for _, _, cw in previews); pad = 8
-    sheet = Image.new('RGBA', (cellw * 4 + pad * 5, (ch + pad) * len(previews) + pad), (26, 18, 40, 255))
+    sheet = Image.new('RGBA', (cellw * 4 + pad * 5, (ch + pad) * len(previews) + pad), (22, 70, 40, 255))
     dr = ImageDraw.Draw(sheet)
     for r, (label, strip, cw) in enumerate(previews):
         for c in range(4):
             x0 = pad + c * (cellw + pad); y0 = pad + r * (ch + pad)
-            dr.rectangle([x0, y0, x0 + cellw, y0 + ch], fill=(40, 30, 58, 255), outline=(120, 90, 160, 255))
+            dr.rectangle([x0, y0, x0 + cellw, y0 + ch], fill=(70, 200, 110, 255), outline=(255, 255, 255, 255))
             frame = strip.crop((c * cw, 0, (c + 1) * cw, ch))
             sheet.alpha_composite(frame, (x0 + (cellw - cw) // 2, y0))
     sheet.convert('RGB').save('/tmp/moltres_preview.png')
