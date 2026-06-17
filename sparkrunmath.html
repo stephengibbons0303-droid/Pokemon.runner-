@@ -146,6 +146,10 @@ const JUMP_H = 132;                       // on-screen jump height (px)
 const celeb = { img:mkImg(), ready:false, frames:4, cw:177, ch:179 };
 celeb.img.onload = ()=>{ celeb.ready=true; };
 celeb.img.src = 'pikachu-celebrate.png';
+// knockout/faint sequence (recoil → tumble → dizzy → downed), bottom-aligned transparent strip
+const pikaFall = { img:mkImg(), ready:false, n:4, cw:307, ch:326 };
+pikaFall.img.onload = ()=>{ pikaFall.ready=true; };
+pikaFall.img.src = 'pika_fall.png';
 // dodge-roll: 4 separately-sized frames (start → tuck → descent → end), one uniform scale
 const roll = { frames:[], n:4, loaded:0, ready:false, scale:0.58 };
 ['pika_roll0.png','pika_roll1.png','pika_roll2.png','pika_roll3.png'].forEach((f,i)=>{
@@ -833,6 +837,7 @@ let dodgeRoll=null, pikaDX=0;          // sideways roll-hop state + Pikachu's x 
 let moveDir=0, pikaVX=0, dashT=0, dashDir=0;   // prototype: walk direction, lateral velocity, dash timer/direction
 let leapVX=0, comboDir=0, comboT=0, airQA=null, pikaWasAir=false;   // dash→jump leap velocity, combo window, queued mid-air Quick Attack
 let hitShake=0, knockT=0, knockVX=0;           // impact feel: screen shake + Pikachu knockback on taking a hit
+let faintAnim=null;                            // knockout animation before the battle restarts
 function haptic(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }   // Android buzz on impact (iOS Safari has no web vibration)
 let moveHolds={}, lastTap={dir:0,t:0};         // held movement controls (by pointer/key id) + double-tap detector
 let pikaHP=100, pikaCast=null;         // duel: Pikachu energy bar (0-100) + special-move wind-up
@@ -962,7 +967,7 @@ function enterBoss(retry){
     foeTimer=2.6; dodgeWin=0; castCD=0; chargeT=0; tbCD=0; charge=2; dodgeRoll=null; pikaDX=0; player.dodging=false;
     moveDir=0; pikaVX=0; dashT=0; dashDir=0; moveHolds={}; lastTap={dir:0,t:0};   // reset prototype movement
     leapVX=0; comboDir=0; comboT=0; airQA=null; pikaWasAir=false;   // reset leap/combo state
-    hitShake=0; knockT=0; knockVX=0;                                // reset impact state
+    hitShake=0; knockT=0; knockVX=0; faintAnim=null;               // reset impact state
     pikaHP=100; pikaCast=null;
     boss.subY = (cfg.duel==='lake') ? 190 : 0;                // only the lake foe starts submerged & rises; others just stand
     bossMsg=''; bossMsgT=0; ashPose='ready'; ashPoseT=0;
@@ -1048,7 +1053,7 @@ function duelBegin(){
 function canTarget(){ return !boss.defeated && boss.diveState==='up' && !boss.evade && !boss.charging; }   // hittable only when surfaced & not charging its heavy
 // tap a move: basic fires instantly, special winds up a moment first
 function castMove(m){
-  if(castCD>0 || pikaCast || boss.defeated) return;
+  if(castCD>0 || pikaCast || boss.defeated || faintAnim) return;
   if(protoActive() && m.kind==='basic' && player.air){   // mid-leap Quick Attack → arcs in and lands for +10%
     if(!airQA){ airQA=m; pikaAtk={m, spr:bossSprite(m.file), t:0, dur:0.5}; Audio8.sfx('hop'); bossMsg='Aerial Quick Attack!'; bossMsgT=0.5; }
     return; }
@@ -1161,7 +1166,7 @@ function doDodge(dir){
 // ---- prototype movement: hold ◀/▶ to walk, double-tap to dash, ▲ to hop ----
 function recomputeMoveDir(){ let d=0; for(const k in moveHolds) d+=moveHolds[k]; moveDir = d<0?-1 : d>0?1 : 0; }
 function startMoveHold(id,dir){
-  if(id in moveHolds) return;                          // already held (ignore key auto-repeat)
+  if(id in moveHolds || faintAnim) return;             // already held (ignore key auto-repeat) / knocked out
   moveHolds[id]=dir; recomputeMoveDir();
   const now=performance.now();
   if(lastTap.dir===dir && now-lastTap.t<DOUBLE_TAP){ triggerDash(dir); lastTap.t=0; }   // 2nd tap → dash
@@ -1171,7 +1176,7 @@ function endMoveHold(id){ if(id in moveHolds){ delete moveHolds[id]; recomputeMo
 function triggerDash(dir){ dashDir=dir; dashT=DASH_DUR; dodgeRoll={dir, t:0, dur:0.34};   // dash = quick roll that stays put
   comboDir=dir; comboT=COMBO_WINDOW;                    // arm the dash→jump leap combo
   player.mood='happy'; player.moodT=0.3; Audio8.sfx('hop'); haptic(12); }
-function duelJump(){ if(player.air) return;
+function duelJump(){ if(player.air || faintAnim) return;
   player.air=true; player.reachedApex=false; player.jumpT=0; player.dodgeHangT=0; player.lane=2; player.targetY=LANE_Y[2];
   if(comboT>0){ leapVX=comboDir*LEAP_SPEED; comboT=0; bossMsg=(comboDir>0?'Leap ▶':'Leap ◀'); bossMsgT=0.4; }  // dash→jump = arced leap
   else leapVX=0;                                        // plain vertical hop
@@ -1187,7 +1192,11 @@ function foeHit(){
     const away=(PLAYER_X+pikaDX) < (BOSS_X+(boss.sideX||0)) ? -1 : 1;
     knockVX=away*640; knockT=0.2; hitShake=Math.max(hitShake,12); player.mood='oops'; player.moodT=0.5; haptic(55);
   }
-  if(pikaHP<=0){ bossFail(); return; }                   // fainted → spend a heart and retry (or game over)
+  if(pikaHP<=0){                                         // fainted
+    if(protoActive()){ faintAnim={t:0,dur:1.15}; knockT=0; pikaVX=0; player.air=false; leapVX=0;
+      hitShake=Math.max(hitShake,16); haptic([60,40,90]); voice(PIKA_CRY,0.9,'pika'); bossMsg='Pikachu fainted!'; bossMsgT=1.1; return; }
+    bossFail(); return;                                  // classic: spend a heart and retry (or game over)
+  }
   if(pikaHP<=18 && !boss.riled) rileUp();                // low-energy comeback surge
 }
 // the 3 directional dodge buttons — a permanent row hugging the bottom-LEFT
@@ -1256,6 +1265,8 @@ function updateDuel(dt){
   });
   if(struck){ foeHit(); if(state==='over') return; }
   if(bossPhase!=='battle' || boss.defeated) return;
+  if(faintAnim){ faintAnim.t+=dt; if(hitShake>0) hitShake=Math.max(0,hitShake-dt*60);   // knockout plays out, then the battle restarts
+    if(faintAnim.t>=faintAnim.dur){ faintAnim=null; bossFail(); } return; }
 
   // Pikachu energy regen (gates how often moves can fire) + Thunderbolt lockout
   if(tbCD>0) tbCD-=dt;
@@ -2581,6 +2592,7 @@ function drawDuel(){
   const shx = sup ? Math.sin(performance.now()/26)*5 : 0;
   const pscale = protoActive();                          // prototype shrinks the actor (scaled around its feet)
   if(pscale){ const fx=PLAYER_X+pikaDX+shx, fy=py+28; g.save(); g.translate(fx,fy); g.scale(DUEL_SCALE,DUEL_SCALE); g.translate(-fx,-fy); }
+  if(faintAnim){ drawPikaFall(PLAYER_X+pikaDX, py, faintAnim); if(pscale) g.restore(); if(qOn) g.restore(); drawDuelBars(); if(bossPhase==='battle'){ drawDodgeButtons(); drawMoveBar(); } drawHUD(); if(bossMsgT>0) drawBossMsg(); return; }
   if(pikaCast){ const p=Math.min(1,pikaCast.t/pikaCast.windup), gr=(sup?40:28)+p*(sup?46:30);   // charging glow on a special
     g.save(); g.globalAlpha=(sup?0.66:0.5)*Math.min(1,0.3+p); const gx=g.createRadialGradient(PLAYER_X+pikaDX+shx,py-6,4,PLAYER_X+pikaDX+shx,py-6,gr);
     gx.addColorStop(0, sup?'#fffbe0':'#fff7b0'); gx.addColorStop(0.5, sup?'rgba(255,225,74,.7)':'rgba(255,225,74,.5)'); gx.addColorStop(1,'rgba(255,225,74,0)'); g.fillStyle=gx;
@@ -3004,6 +3016,14 @@ function drawPikaDash(x,y){
   g.save(); g.imageSmoothingEnabled=true;
   g.drawImage(im, x - w*0.40, y - h*0.66, w, h);   // head leads toward the boss; feet near Pikachu's stance
   g.restore();
+}
+// knockout: play the 4-frame fall strip (recoil→tumble→dizzy→downed) over ~0.7s, then hold the downed pose
+function drawPikaFall(x, py, fa){
+  const fp=Math.min(1, fa.t/0.7), fi=Math.min(pikaFall.n-1, Math.floor(fp*pikaFall.n));
+  if(!pikaFall.ready){ drawCreature(x, py, 'oops', true, true); return; }
+  const ch=150, cw=ch*(pikaFall.cw/pikaFall.ch), bottom=py+28;   // cell is ground-aligned → bottom on the floor line
+  g.imageSmoothingEnabled=true;
+  g.drawImage(pikaFall.img, fi*pikaFall.cw,0,pikaFall.cw,pikaFall.ch, x-cw/2, bottom-ch, cw, ch);
 }
 function drawShield(x,y){
   const t=performance.now()/1000;
