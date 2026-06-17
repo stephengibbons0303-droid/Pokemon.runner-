@@ -875,7 +875,7 @@ function preloadBoss(i){
 
 // dev-only: jump straight to a level's play section or its boss fight (see the
 // #devjump start-screen menu). DEV gates whether that menu shows at all.
-const DEV = true;   // ← set false for a release build to hide the dev jump menu
+const DEV = false;   // ← set false for a release build to hide the dev jump menu
 // the duel scene each level uses (or would use once built) — drives the dev preview
 const DUEL_SCENE_BY_LEVEL = ['lake','dojo','grove','crystal','summit'];
 function devJump(kind, idx){
