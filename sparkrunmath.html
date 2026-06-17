@@ -150,6 +150,9 @@ celeb.img.src = 'pikachu-celebrate.png';
 const pikaFall = { img:mkImg(), ready:false, n:4, cw:307, ch:326 };
 pikaFall.img.onload = ()=>{ pikaFall.ready=true; };
 pikaFall.img.src = 'pika_fall.png';
+const lucaFall = { img:mkImg(), ready:false, n:4, cw:259, ch:396 };   // Lucario knockout (recoil→stagger→reel→down)
+lucaFall.img.onload = ()=>{ lucaFall.ready=true; };
+lucaFall.img.src = 'luca_fall.png';
 // dodge-roll: 4 separately-sized frames (start → tuck → descent → end), one uniform scale
 const roll = { frames:[], n:4, loaded:0, ready:false, scale:0.58 };
 ['pika_roll0.png','pika_roll1.png','pika_roll2.png','pika_roll3.png'].forEach((f,i)=>{
@@ -2754,6 +2757,14 @@ function drawBossSprite(){
     const c1 = synth ? 'rgba(150,240,150,0)' : 'rgba(255,242,160,0)';
     gl.addColorStop(0,c0); gl.addColorStop(1,c1);
     g.fillStyle=gl; g.beginPath(); g.arc(cx,cy,R,0,7); g.fill(); g.restore();
+  }
+  // prototype: Lucario plays his own knockout strip on defeat (instead of the generic fade/sink)
+  if(protoActive() && boss.defeated && lucaFall.ready){
+    const fp=Math.min(1, boss.deadT/0.7), fi=Math.min(lucaFall.n-1, Math.floor(fp*lucaFall.n));
+    const feet=cy+BOSS_H/2, chh=BOSS_H*DUEL_SCALE*1.13, cww=chh*(lucaFall.cw/lucaFall.ch);   // ground-aligned, matched to scaled boss size
+    g.save(); g.imageSmoothingEnabled=true;
+    g.drawImage(lucaFall.img, fi*lucaFall.cw,0,lucaFall.cw,lucaFall.ch, cx-cww/2, feet-chh, cww, chh);
+    g.restore(); return;
   }
   let alpha=1, rot=0, sink=0;
   if(boss.defeated){ const p=Math.min(1,boss.deadT/1.8); alpha=1-p*0.9; rot=p*0.7; sink=p*150; }
