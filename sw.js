@@ -1,5 +1,9 @@
-// Spark Run — offline service worker (precache all assets on first online load)
-const CACHE='sparkrun-v3';
+// Spark Run — offline service worker
+// Strategy: NETWORK-FIRST for the page (so code updates appear after a single
+// reload on any device), CACHE-FIRST for the large, effectively-immutable media
+// assets. Everything is still precached on first online load for full offline play.
+const CACHE='sparkrun-v4';
+const PAGE='sparkrunmath.html';
 const ASSETS=[
   "sparkrunmath.html",
   "app.webmanifest",
@@ -199,16 +203,24 @@ self.addEventListener('install', e=>{
 self.addEventListener('activate', e=>{
   e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
 });
+function sameOrigin(req){ try{ return new URL(req.url).origin===location.origin; }catch(_){ return false; } }
+function cachePut(req, resp){
+  try{ if(resp && resp.status===200 && sameOrigin(req)){ const copy=resp.clone(); caches.open(CACHE).then(c=>c.put(req, copy)); } }catch(_){}
+}
 self.addEventListener('fetch', e=>{
-  if(e.request.method!=='GET') return;
+  const req=e.request;
+  if(req.method!=='GET') return;
+  // The page itself: network-first, so a new build shows up after ONE reload.
+  // Falls back to the cached page when offline.
+  if(req.mode==='navigate' || req.destination==='document'){
+    e.respondWith(
+      fetch(req).then(resp=>{ cachePut(req, resp); return resp; })
+        .catch(()=> caches.match(req,{ignoreSearch:true}).then(hit=> hit || caches.match(PAGE)))
+    );
+    return;
+  }
+  // Media + everything else: cache-first (big, immutable; keeps load instant & offline).
   e.respondWith(
-    caches.match(e.request, {ignoreSearch:true}).then(hit=> hit || fetch(e.request).then(resp=>{
-      try{
-        if(resp && resp.status===200 && new URL(e.request.url).origin===location.origin){
-          const copy=resp.clone(); caches.open(CACHE).then(c=>c.put(e.request, copy));
-        }
-      }catch(_){}
-      return resp;
-    }).catch(()=>hit))
+    caches.match(req, {ignoreSearch:true}).then(hit=> hit || fetch(req).then(resp=>{ cachePut(req, resp); return resp; }).catch(()=>hit))
   );
 });
