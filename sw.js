@@ -1,5 +1,5 @@
 // Spark Run — offline service worker (precache all assets on first online load)
-const CACHE='sparkrun-v1';
+const CACHE='sparkrun-v2';
 const ASSETS=[
   "sparkrunmath.html",
   "app.webmanifest",
