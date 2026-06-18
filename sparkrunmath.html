@@ -68,7 +68,17 @@
 
 const cv = document.getElementById('game');
 const g  = cv.getContext('2d');
-const W = 960, H = 540;                 // fixed virtual resolution
+const W = 960;                          // fixed virtual width
+// Canvas HEIGHT adapts to the device's landscape aspect so the game fills the screen
+// (no big letterbox on 4:3 / 16:10 tablets). Gameplay constants (LANE_Y, FLOOR_Y, jumps)
+// are unchanged — the extra height is just more sky/ground, and bottom-anchored UI follows H.
+let H = 540;
+(function(){
+  const ok = typeof innerWidth==='number'&&innerWidth>0&&typeof innerHeight==='number'&&innerHeight>0;
+  const a = ok ? Math.max(innerWidth,innerHeight)/Math.min(innerWidth,innerHeight) : (W/540);   // landscape aspect (orientation-independent)
+  H = Math.max(540, Math.min(760, Math.round(W / a)));   // 16:9→540, 16:10→600, 4:3→~720 (capped)
+  try{ cv.width=W; cv.height=H; }catch(e){}
+})();
 
 // ---------- responsive touch controls ----------
 // The canvas renders at a fixed 960×540 and is letterboxed to fit (object-fit:
@@ -2035,7 +2045,7 @@ function drawMenu(){
   g.fillStyle=C.coral; g.fillText('Spark Run',W/2,150);
   g.fillStyle=C.cream; g.font='600 26px Fredoka, sans-serif'; g.fillText('Pick a player',W/2,196);
   // mascot demo
-  drawCreature(W/2,292,'happy');
+  drawCreature(W/2, playBtnRects().maths.y-104, 'happy');   // mascot sits just above the play buttons (follows H)
   g.restore();
   // two games — older (written maths) / younger (audio ABC & 123)
   const pr=playBtnRects();
@@ -2055,7 +2065,7 @@ function drawMenu(){
   g.fillText('🏆 '+caught.size+'/'+BOSSES.length, db.x+13, db.y+db.h/2+1);
   g.textAlign='center'; g.textBaseline='alphabetic';
 }
-function playBtnRects(){ const bw=320, bx=W/2-bw/2, bh=58, gap=12, by=404;
+function playBtnRects(){ const bw=320, bx=W/2-bw/2, bh=58, gap=12, by=H-136;   // anchored to the bottom (==404 at H=540) so it sits right on taller screens
   return { maths:{x:bx,y:by,w:bw,h:bh}, abc:{x:bx,y:by+bh+gap,w:bw,h:bh} }; }
 function diffBtnRect(){ const a=playBtnRects().abc, r=a.h/2, cx=a.x+a.w+14+r, cy=a.y+r;   // round toggle to the right of the ABC button
   return {x:cx-r, y:a.y, w:a.h, h:a.h, cx, cy, r}; }
