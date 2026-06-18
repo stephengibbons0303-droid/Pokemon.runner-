@@ -73,12 +73,18 @@ const W = 960;                          // fixed virtual width
 // (no big letterbox on 4:3 / 16:10 tablets). Gameplay constants (LANE_Y, FLOOR_Y, jumps)
 // are unchanged — the extra height is just more sky/ground, and bottom-anchored UI follows H.
 let H = 540;
-(function(){
+// Recompute on EVERY resize/orientationchange, not just at parse time: Android
+// Chrome reports a not-yet-settled viewport while its URL bar is animating, which
+// used to lock H to a wrong value and leave the canvas letterboxed. Re-fitting on
+// resize lets it self-correct once innerHeight settles. (H is read live by all
+// draw code, so the only state to refresh is the canvas size itself.)
+function fitCanvas(){
   const ok = typeof innerWidth==='number'&&innerWidth>0&&typeof innerHeight==='number'&&innerHeight>0;
   const a = ok ? Math.max(innerWidth,innerHeight)/Math.min(innerWidth,innerHeight) : (W/540);   // landscape aspect (orientation-independent)
   H = Math.max(540, Math.min(760, Math.round(W / a)));   // 16:9→540, 16:10→600, 4:3→~720 (capped)
-  try{ cv.width=W; cv.height=H; }catch(e){}
-})();
+  try{ if(cv.height!==H){ cv.width=W; cv.height=H; } }catch(e){}
+}
+fitCanvas();
 
 // ---------- responsive touch controls ----------
 // The canvas renders at a fixed 960×540 and is letterboxed to fit (object-fit:
@@ -90,9 +96,11 @@ let H = 540;
 // hit-testing, so layout and input stay in lock-step.
 let RENDER_SCALE = 1;                    // CSS pixels per canvas unit
 function updateRenderScale(){ const r=cv.getBoundingClientRect(); if(r.width>0) RENDER_SCALE=r.width/W; }
-addEventListener('resize', updateRenderScale);
-addEventListener('orientationchange', ()=>setTimeout(updateRenderScale,200));
-updateRenderScale();
+addEventListener('resize', ()=>{ fitCanvas(); updateRenderScale(); });
+addEventListener('orientationchange', ()=>setTimeout(()=>{ fitCanvas(); updateRenderScale(); },200));
+// a couple of late re-fits catch Android Chrome's URL-bar settling after first paint
+addEventListener('load', ()=>{ fitCanvas(); updateRenderScale(); setTimeout(()=>{ fitCanvas(); updateRenderScale(); },400); });
+fitCanvas(); updateRenderScale();
 
 // ---------- fullscreen toggle (browser-testing aid; a no-op / hidden once a PWA) ----------
 (function(){
@@ -1436,7 +1444,7 @@ function dexSlotRects(){
   return BOSSES.map((mon,i)=>({ x:sx+i*(cw+gap), y:top, w:cw, h:ch, mon }));
 }
 const PROMPT={x:W/2-97, y:8, w:194, h:140};                   // top-centre prompt box (text sum, or Ash portrait in the audio pack — sized to the art's ~1.39 aspect, clears the high lane)
-const RESUME={x:W/2-150,y:H/2+20,w:300,h:64};                  // big resume button on the pause overlay
+function RESUME(){ return {x:W/2-150,y:H/2+20,w:300,h:64}; }   // big resume button on the pause overlay (live H)
 // Size the top-corner pause/mute buttons to the physical-tap floor (capped so
 // they stay tidy in the HUD) and re-anchor them from the top-right each frame.
 function layoutTopButtons(){
@@ -1470,7 +1478,7 @@ function onPress(e){
     return;                                                                        // ignore other taps on the menu
   }
   if(inGameplay() && pointInRect(PAUSE,p.x,p.y)){ setPaused(!paused); return; }   // pause / unpause
-  if(paused){ if(pointInRect(RESUME,p.x,p.y)) setPaused(false); return; }          // while paused, only Resume responds
+  if(paused){ if(pointInRect(RESUME(),p.x,p.y)) setPaused(false); return; }         // while paused, only Resume responds
   if(PACK.audio && inGameplay() && pointInRect(PROMPT,p.x,p.y)){                   // younger game: tap Ash to hear it again
     const it=(state==='boss')?bossChal:gate; if(it){ sayGlyph(it.audio!=null?it.audio:it.ans); return; }
   }
@@ -2015,9 +2023,10 @@ function drawPause(){
   g.save(); g.shadowColor='rgba(0,0,0,.5)'; g.shadowBlur=6; g.shadowOffsetY=2;
   g.fillStyle=C.cream; g.font='700 64px Fredoka, sans-serif'; g.fillText('Paused', W/2, H/2-30);
   g.restore();
-  g.fillStyle=C.leaf; rr(RESUME.x,RESUME.y,RESUME.w,RESUME.h,22); g.fill();
+  const RB=RESUME();
+  g.fillStyle=C.leaf; rr(RB.x,RB.y,RB.w,RB.h,22); g.fill();
   g.fillStyle='#fff'; g.font='700 30px Fredoka, sans-serif'; g.textBaseline='middle';
-  g.fillText('▶  Resume', W/2, RESUME.y+RESUME.h/2+1);
+  g.fillText('▶  Resume', W/2, RB.y+RB.h/2+1);
   g.textBaseline='alphabetic'; g.textAlign='left';
 }
 
